@@ -1,11 +1,12 @@
 """Tests for scope top TUI."""
 
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import pytest
 
 from scope.core.session import Session
-from scope.core.state import save_session
+from scope.core.state import load_all, save_session
 from scope.tui.app import ScopeApp
 from scope.tui.widgets.session_tree import SessionTable
 
@@ -162,3 +163,65 @@ async def test_session_table_truncates_long_task(setup_scope_dir):
         row_data = table.get_row_at(0)
         assert len(row_data[1]) <= 40
         assert row_data[1].endswith("...")
+
+
+@pytest.mark.asyncio
+async def test_new_session_outside_tmux_shows_notification(setup_scope_dir):
+    """Test that pressing n outside tmux shows error notification."""
+    app = ScopeApp()
+    async with app.run_test() as pilot:
+        # Mock get_current_session to return None (not in tmux)
+        with patch("scope.tui.app.get_current_session", return_value=None):
+            await pilot.press("n")
+
+        # No session should be created
+        sessions = load_all()
+        assert len(sessions) == 0
+
+
+@pytest.mark.asyncio
+async def test_new_session_creates_session(setup_scope_dir):
+    """Test that pressing n creates a new session when in tmux."""
+    app = ScopeApp()
+    async with app.run_test() as pilot:
+        # Mock get_current_session to return a session name (in tmux)
+        # Mock split_window to avoid actually splitting
+        with (
+            patch("scope.tui.app.get_current_session", return_value="scope"),
+            patch("scope.tui.app.split_window") as mock_split,
+        ):
+            await pilot.press("n")
+
+            # Session should be created
+            sessions = load_all()
+            assert len(sessions) == 1
+            assert sessions[0].id == "0"
+            assert sessions[0].task == ""
+            assert sessions[0].state == "running"
+
+            # split_window should have been called
+            mock_split.assert_called_once()
+            call_kwargs = mock_split.call_args.kwargs
+            assert call_kwargs["command"] == "claude"
+            assert call_kwargs["env"] == {"SCOPE_SESSION_ID": "0"}
+
+
+@pytest.mark.asyncio
+async def test_new_session_appears_in_table(setup_scope_dir):
+    """Test that new session appears in table after creation."""
+    app = ScopeApp()
+    async with app.run_test() as pilot:
+        with (
+            patch("scope.tui.app.get_current_session", return_value="scope"),
+            patch("scope.tui.app.split_window"),
+        ):
+            await pilot.press("n")
+
+            # Trigger a refresh (file watcher would do this normally)
+            app.refresh_sessions()
+
+            table = app.query_one(SessionTable)
+            assert table.row_count == 1
+            row_data = table.get_row_at(0)
+            assert row_data[0] == "0"  # ID
+            assert row_data[1] == "(pending...)"  # Task (empty shows pending)

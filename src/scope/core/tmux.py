@@ -75,3 +75,57 @@ def has_session(name: str) -> bool:
         capture_output=True,
     )
     return result.returncode == 0
+
+
+def get_current_session() -> str | None:
+    """Get the name of the current tmux session.
+
+    Returns:
+        Session name if running inside tmux, None otherwise.
+    """
+    result = subprocess.run(
+        ["tmux", "display-message", "-p", "#{session_name}"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return None
+
+
+def split_window(
+    command: str,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+) -> None:
+    """Split the current tmux window horizontally and run a command.
+
+    Args:
+        command: Command to run in the new pane.
+        cwd: Working directory. Defaults to current directory.
+        env: Additional environment variables to set.
+
+    Raises:
+        TmuxError: If tmux command fails.
+    """
+    cwd = cwd or Path.cwd()
+
+    # Build command with environment variables (same pattern as create_session)
+    if env:
+        env_prefix = " ".join(f"{k}={v}" for k, v in env.items())
+        full_command = f"{env_prefix} {command}"
+    else:
+        full_command = command
+
+    cmd = [
+        "tmux",
+        "split-window",
+        "-h",  # Horizontal split
+        "-c",
+        str(cwd),  # Working directory
+        full_command,
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise TmuxError(f"Failed to split window: {result.stderr}")

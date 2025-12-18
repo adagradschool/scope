@@ -1,12 +1,15 @@
 """Main Textual app for scope TUI."""
 
 import asyncio
+from datetime import datetime
 from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.widgets import Footer, Header, Static
 
-from scope.core.state import load_all
+from scope.core.session import Session
+from scope.core.state import ensure_scope_dir, load_all, next_id, save_session
+from scope.core.tmux import get_current_session, split_window
 from scope.tui.widgets.session_tree import SessionTable
 
 
@@ -18,6 +21,7 @@ class ScopeApp(App):
 
     TITLE = "scope"
     BINDINGS = [
+        ("n", "new_session", "New"),
         ("q", "quit", "Quit"),
     ]
     CSS = """
@@ -76,17 +80,55 @@ class ScopeApp(App):
             empty_msg.display = True
             self.sub_title = "0 sessions"
 
+    def action_new_session(self) -> None:
+        """Create a new session in a split pane."""
+        # Check if we're running inside tmux
+        if get_current_session() is None:
+            self.notify(
+                "Run scope top inside tmux to create sessions", severity="error"
+            )
+            return
+
+        scope_dir = ensure_scope_dir()
+        session_id = next_id("")
+
+        session = Session(
+            id=session_id,
+            task="",  # Will be inferred from first user message via hooks
+            parent="",
+            state="running",
+            tmux_session=f"scope-{session_id}",
+            created_at=datetime.now(),
+        )
+        save_session(session)
+
+        # Split current window to run claude with session ID
+        split_window(
+            command="claude",
+            cwd=scope_dir.parent,  # Project root
+            env={"SCOPE_SESSION_ID": session_id},
+        )
+
     async def _watch_sessions(self) -> None:
-        """Watch .scope/sessions/ for changes and refresh."""
+        """Watch .scope/ for changes and refresh."""
         from watchfiles import awatch
 
-        sessions_dir = Path.cwd() / ".scope" / "sessions"
+        scope_dir = Path.cwd() / ".scope"
 
         # Ensure directory exists for watching
-        sessions_dir.mkdir(parents=True, exist_ok=True)
+        scope_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            async for _ in awatch(sessions_dir):
+            async for changes in awatch(scope_dir):
+                # Check if .scope was deleted (watch will stop)
+                if not scope_dir.exists():
+                    scope_dir.mkdir(parents=True, exist_ok=True)
                 self.refresh_sessions()
         except asyncio.CancelledError:
             pass
+        except FileNotFoundError:
+            # Directory was deleted, recreate and restart watching
+            scope_dir.mkdir(parents=True, exist_ok=True)
+            self.refresh_sessions()
+            # Restart the watcher
+            self._watcher_task = asyncio.create_task(self._watch_sessions())
