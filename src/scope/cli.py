@@ -10,6 +10,7 @@ import click
 
 from scope.commands.poll import poll
 from scope.commands.spawn import spawn
+from scope.commands.top import top
 
 
 @click.group()
@@ -26,3 +27,4 @@ def main() -> None:
 # Register commands
 main.add_command(spawn)
 main.add_command(poll)
+main.add_command(top)

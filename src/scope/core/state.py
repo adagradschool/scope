@@ -136,3 +136,26 @@ def load_session(session_id: str) -> Session | None:
         tmux_session=(session_dir / "tmux").read_text(),
         created_at=datetime.fromisoformat((session_dir / "created_at").read_text()),
     )
+
+
+def load_all() -> list[Session]:
+    """Load all sessions from .scope/sessions/.
+
+    Returns:
+        List of all sessions, sorted by created_at (oldest first).
+        Returns empty list if .scope/sessions/ doesn't exist.
+    """
+    scope_dir = Path.cwd() / ".scope"
+    sessions_dir = scope_dir / "sessions"
+
+    if not sessions_dir.exists():
+        return []
+
+    sessions = []
+    for session_dir in sessions_dir.iterdir():
+        if session_dir.is_dir():
+            session = load_session(session_dir.name)
+            if session:
+                sessions.append(session)
+
+    return sorted(sessions, key=lambda s: s.created_at)

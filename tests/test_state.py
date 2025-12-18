@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 
 from scope.core.session import Session
-from scope.core.state import ensure_scope_dir, load_session, next_id, save_session
+from scope.core.state import ensure_scope_dir, load_all, load_session, next_id, save_session
 
 
 def test_ensure_scope_dir(tmp_path, monkeypatch):
@@ -174,3 +174,137 @@ def test_load_session_with_parent(tmp_path, monkeypatch):
 
     assert loaded is not None
     assert loaded.parent == "0"
+
+
+def test_load_all_empty(tmp_path, monkeypatch):
+    """Test load_all returns empty list when no sessions exist."""
+    monkeypatch.chdir(tmp_path)
+
+    sessions = load_all()
+
+    assert sessions == []
+
+
+def test_load_all_no_scope_dir(tmp_path, monkeypatch):
+    """Test load_all returns empty list when .scope doesn't exist."""
+    monkeypatch.chdir(tmp_path)
+
+    # Don't create .scope directory
+    sessions = load_all()
+
+    assert sessions == []
+
+
+def test_load_all_single_session(tmp_path, monkeypatch):
+    """Test load_all loads a single session."""
+    monkeypatch.chdir(tmp_path)
+
+    session = Session(
+        id="0",
+        task="Test task",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=datetime.now(timezone.utc),
+    )
+    save_session(session)
+
+    sessions = load_all()
+
+    assert len(sessions) == 1
+    assert sessions[0].id == "0"
+    assert sessions[0].task == "Test task"
+
+
+def test_load_all_multiple_sessions(tmp_path, monkeypatch):
+    """Test load_all loads multiple sessions."""
+    monkeypatch.chdir(tmp_path)
+
+    # Create sessions with different timestamps
+    session0 = Session(
+        id="0",
+        task="First task",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    session1 = Session(
+        id="1",
+        task="Second task",
+        parent="",
+        state="done",
+        tmux_session="scope-1",
+        created_at=datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc),
+    )
+    save_session(session0)
+    save_session(session1)
+
+    sessions = load_all()
+
+    assert len(sessions) == 2
+    assert sessions[0].id == "0"
+    assert sessions[1].id == "1"
+
+
+def test_load_all_sorted_by_created_at(tmp_path, monkeypatch):
+    """Test load_all returns sessions sorted by created_at."""
+    monkeypatch.chdir(tmp_path)
+
+    # Create sessions out of order (newer first)
+    newer = Session(
+        id="0",
+        task="Newer task",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=datetime(2024, 1, 2, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    older = Session(
+        id="1",
+        task="Older task",
+        parent="",
+        state="running",
+        tmux_session="scope-1",
+        created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    save_session(newer)
+    save_session(older)
+
+    sessions = load_all()
+
+    # Should be sorted oldest first
+    assert len(sessions) == 2
+    assert sessions[0].id == "1"  # older
+    assert sessions[1].id == "0"  # newer
+
+
+def test_load_all_with_child_sessions(tmp_path, monkeypatch):
+    """Test load_all includes child sessions."""
+    monkeypatch.chdir(tmp_path)
+
+    parent = Session(
+        id="0",
+        task="Parent task",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    child = Session(
+        id="0.0",
+        task="Child task",
+        parent="0",
+        state="running",
+        tmux_session="scope-0.0",
+        created_at=datetime(2024, 1, 1, 12, 30, 0, tzinfo=timezone.utc),
+    )
+    save_session(parent)
+    save_session(child)
+
+    sessions = load_all()
+
+    assert len(sessions) == 2
+    ids = [s.id for s in sessions]
+    assert "0" in ids
+    assert "0.0" in ids
