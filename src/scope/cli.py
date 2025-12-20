@@ -13,6 +13,7 @@ import click
 
 from scope.commands.abort import abort
 from scope.commands.poll import poll
+from scope.commands.setup import setup
 from scope.commands.spawn import spawn
 from scope.commands.top import top
 from scope.core.tmux import in_tmux
@@ -53,3 +54,4 @@ main.add_command(spawn)
 main.add_command(poll)
 main.add_command(top)
 main.add_command(abort)
+main.add_command(setup)
