@@ -159,3 +159,42 @@ def load_all() -> list[Session]:
                 sessions.append(session)
 
     return sorted(sessions, key=lambda s: s.created_at)
+
+
+def update_state(session_id: str, state: str) -> None:
+    """Update the state of a session.
+
+    Args:
+        session_id: The session ID to update.
+        state: New state value (running, done, aborted).
+
+    Raises:
+        FileNotFoundError: If session doesn't exist.
+    """
+    scope_dir = Path.cwd() / ".scope"
+    session_dir = _get_session_dir(scope_dir, session_id)
+
+    if not session_dir.exists():
+        raise FileNotFoundError(f"Session {session_id} not found")
+
+    (session_dir / "state").write_text(state)
+
+
+def delete_session(session_id: str) -> None:
+    """Delete a session from the filesystem.
+
+    Args:
+        session_id: The session ID to delete.
+
+    Raises:
+        FileNotFoundError: If session doesn't exist.
+    """
+    import shutil
+
+    scope_dir = Path.cwd() / ".scope"
+    session_dir = _get_session_dir(scope_dir, session_id)
+
+    if not session_dir.exists():
+        raise FileNotFoundError(f"Session {session_id} not found")
+
+    shutil.rmtree(session_dir)

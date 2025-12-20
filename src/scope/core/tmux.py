@@ -221,6 +221,24 @@ def has_session(name: str) -> bool:
     return result.returncode == 0
 
 
+def kill_session(name: str) -> None:
+    """Kill a tmux session.
+
+    Args:
+        name: Session name to kill (e.g., "scope-0")
+
+    Raises:
+        TmuxError: If tmux command fails.
+    """
+    result = subprocess.run(
+        ["tmux", "kill-session", "-t", name],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise TmuxError(f"Failed to kill session {name}: {result.stderr}")
+
+
 def get_current_session() -> str | None:
     """Get the name of the current tmux session.
 

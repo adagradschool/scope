@@ -8,7 +8,7 @@ from textual.app import App, ComposeResult
 from textual.widgets import DataTable, Footer, Header, Static
 
 from scope.core.session import Session
-from scope.core.state import ensure_scope_dir, load_all, next_id, save_session
+from scope.core.state import delete_session, ensure_scope_dir, load_all, next_id, save_session
 from scope.core.tmux import (
     TmuxError,
     attach_in_split,
@@ -17,6 +17,7 @@ from scope.core.tmux import (
     enable_mouse,
     has_session,
     in_tmux,
+    kill_session,
 )
 from scope.tui.widgets.session_tree import SessionTable
 
@@ -30,7 +31,7 @@ class ScopeApp(App):
     TITLE = "scope"
     BINDINGS = [
         ("n", "new_session", "New"),
-        ("d", "detach", "Detach"),
+        ("x", "abort_session", "Abort"),
         ("q", "quit", "Quit"),
     ]
 
@@ -176,6 +177,49 @@ class ScopeApp(App):
         finally:
             self._attached_pane_id = None
             self._attached_session_name = None
+
+    def action_abort_session(self) -> None:
+        """Abort the currently selected session."""
+        import subprocess
+
+        table = self.query_one(SessionTable)
+
+        # Get selected row
+        if table.cursor_row is None:
+            self.notify("No session selected", severity="warning")
+            return
+
+        row_key = table.get_row_at(table.cursor_row)
+        if not row_key:
+            self.notify("No session selected", severity="warning")
+            return
+
+        session_id = row_key[0]  # First column is ID
+        tmux_name = f"scope-{session_id}"
+
+        # If this session is currently attached, kill the pane first
+        if self._attached_session_name == tmux_name and self._attached_pane_id:
+            subprocess.run(
+                ["tmux", "kill-pane", "-t", self._attached_pane_id],
+                capture_output=True,
+            )
+            self._attached_pane_id = None
+            self._attached_session_name = None
+
+        # Kill tmux session if it exists
+        if has_session(tmux_name):
+            try:
+                kill_session(tmux_name)
+            except TmuxError as e:
+                self.notify(f"Warning: {e}", severity="warning")
+
+        # Delete session from filesystem
+        try:
+            delete_session(session_id)
+        except FileNotFoundError:
+            pass  # Already gone
+
+        self.refresh_sessions()
 
     async def _watch_sessions(self) -> None:
         """Watch .scope/ for changes and refresh."""
