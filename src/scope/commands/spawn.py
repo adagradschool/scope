@@ -10,7 +10,7 @@ import click
 
 from scope.core.session import Session
 from scope.core.state import ensure_scope_dir, next_id, save_session
-from scope.core.tmux import TmuxError, create_session
+from scope.core.tmux import TmuxError, create_session, tmux_session_name
 
 
 @click.command()
@@ -36,7 +36,7 @@ def spawn(task: str) -> None:
     session_id = next_id(parent)
 
     # Create session object - each session is an independent tmux session
-    tmux_name = f"scope-{session_id}"
+    tmux_name = tmux_session_name(session_id)
     session = Session(
         id=session_id,
         task=task,

@@ -24,6 +24,7 @@ from scope.core.tmux import (
     has_session,
     in_tmux,
     kill_session,
+    tmux_session_name,
 )
 from scope.tui.widgets.session_tree import SessionTable
 
@@ -116,7 +117,7 @@ class ScopeApp(App):
 
         scope_dir = ensure_scope_dir()
         session_id = next_id("")
-        tmux_name = f"scope-{session_id}"
+        tmux_name = tmux_session_name(session_id)
 
         session = Session(
             id=session_id,
@@ -156,7 +157,7 @@ class ScopeApp(App):
 
         # Get the session ID from the row key
         session_id = str(event.row_key.value)
-        tmux_name = f"scope-{session_id}"
+        tmux_name = tmux_session_name(session_id)
 
         # Check if session exists
         if not has_session(tmux_name):
@@ -200,8 +201,9 @@ class ScopeApp(App):
             self.notify("No session selected", severity="warning")
             return
 
-        session_id = row_key[0]  # First column is ID
-        tmux_name = f"scope-{session_id}"
+        session_id = row_key[0]  # First column is ID (may be indented)
+        session_id = session_id.strip()  # Remove indentation
+        tmux_name = tmux_session_name(session_id)
 
         # If this session is currently attached, kill the pane first
         if self._attached_session_name == tmux_name and self._attached_pane_id:

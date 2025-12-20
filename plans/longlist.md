@@ -1,3 +1,4 @@
-- spawn should not just spin up claude code but also pass the prompt and kick it off.
 - parametrize claude (--dangerously-skip-permissions) etc. when doing `spawn`
 - move `.scope` to be global across cwd ? (Debate)
+- make it CC agnostic, (aider/codex)
+- add notifications (this subagent needs human assistance)

@@ -8,7 +8,7 @@ import pytest
 from scope.core.session import Session
 from scope.core.state import load_all, save_session
 from scope.tui.app import ScopeApp
-from scope.tui.widgets.session_tree import SessionTable
+from scope.tui.widgets.session_tree import SessionTable, _build_tree
 
 
 @pytest.fixture
@@ -231,3 +231,168 @@ async def test_new_session_appears_in_table(setup_scope_dir):
             row_data = table.get_row_at(0)
             assert row_data[0] == "0"  # ID
             assert row_data[1] == "(pending...)"  # Task (empty shows pending)
+
+
+def test_build_tree_empty():
+    """Test _build_tree with no sessions."""
+    result = _build_tree([])
+    assert result == []
+
+
+def test_build_tree_single_root():
+    """Test _build_tree with a single root session."""
+    session = Session(
+        id="0",
+        task="Root task",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=datetime.now(timezone.utc),
+    )
+    result = _build_tree([session])
+    assert len(result) == 1
+    assert result[0] == (session, 0)
+
+
+def test_build_tree_with_children():
+    """Test _build_tree with parent and children."""
+    parent = Session(
+        id="0",
+        task="Parent task",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    child1 = Session(
+        id="0.0",
+        task="Child 1",
+        parent="0",
+        state="running",
+        tmux_session="scope-0.0",
+        created_at=datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc),
+    )
+    child2 = Session(
+        id="0.1",
+        task="Child 2",
+        parent="0",
+        state="done",
+        tmux_session="scope-0.1",
+        created_at=datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc),
+    )
+
+    # Order shouldn't matter for input
+    result = _build_tree([child2, parent, child1])
+
+    # Output should be parent first, then children sorted by ID
+    assert len(result) == 3
+    assert result[0] == (parent, 0)
+    assert result[1] == (child1, 1)
+    assert result[2] == (child2, 1)
+
+
+def test_build_tree_nested():
+    """Test _build_tree with deeply nested sessions."""
+    root = Session(
+        id="0",
+        task="Root",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    child = Session(
+        id="0.0",
+        task="Child",
+        parent="0",
+        state="running",
+        tmux_session="scope-0.0",
+        created_at=datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc),
+    )
+    grandchild = Session(
+        id="0.0.0",
+        task="Grandchild",
+        parent="0.0",
+        state="running",
+        tmux_session="scope-0.0.0",
+        created_at=datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc),
+    )
+
+    result = _build_tree([grandchild, root, child])
+
+    assert len(result) == 3
+    assert result[0] == (root, 0)
+    assert result[1] == (child, 1)
+    assert result[2] == (grandchild, 2)
+
+
+def test_build_tree_multiple_roots():
+    """Test _build_tree with multiple root sessions."""
+    root1 = Session(
+        id="0",
+        task="Root 1",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    root2 = Session(
+        id="1",
+        task="Root 2",
+        parent="",
+        state="running",
+        tmux_session="scope-1",
+        created_at=datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc),
+    )
+    child_of_0 = Session(
+        id="0.0",
+        task="Child of 0",
+        parent="0",
+        state="running",
+        tmux_session="scope-0.0",
+        created_at=datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc),
+    )
+
+    result = _build_tree([child_of_0, root2, root1])
+
+    # Should be sorted: 0, 0.0, 1
+    assert len(result) == 3
+    assert result[0] == (root1, 0)
+    assert result[1] == (child_of_0, 1)
+    assert result[2] == (root2, 0)
+
+
+@pytest.mark.asyncio
+async def test_session_table_shows_nested_sessions(setup_scope_dir):
+    """Test that nested sessions are displayed with indentation."""
+    parent = Session(
+        id="0",
+        task="Parent task",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    child = Session(
+        id="0.0",
+        task="Child task",
+        parent="0",
+        state="running",
+        tmux_session="scope-0.0",
+        created_at=datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc),
+    )
+    save_session(parent)
+    save_session(child)
+
+    app = ScopeApp()
+    async with app.run_test() as pilot:
+        table = app.query_one(SessionTable)
+        assert table.row_count == 2
+
+        # Parent should not be indented
+        parent_row = table.get_row_at(0)
+        assert parent_row[0] == "0"
+
+        # Child should be indented
+        child_row = table.get_row_at(1)
+        assert child_row[0] == "  0.0"  # Two spaces of indentation

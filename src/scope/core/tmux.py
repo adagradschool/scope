@@ -18,6 +18,20 @@ class TmuxError(Exception):
 SCOPE_SESSION = "scope"
 
 
+def tmux_session_name(session_id: str) -> str:
+    """Convert a scope session ID to a tmux session name.
+
+    Replaces dots with hyphens since tmux uses dots for window.pane notation.
+
+    Args:
+        session_id: The scope session ID (e.g., "0", "0.0", "0.0.1")
+
+    Returns:
+        Safe tmux session name (e.g., "scope-0", "scope-0-0", "scope-0-0-1")
+    """
+    return f"scope-{session_id.replace('.', '-')}"
+
+
 def in_tmux() -> bool:
     """Check if we're running inside a tmux session.
 
