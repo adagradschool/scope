@@ -6,6 +6,7 @@ import pytest
 from click.testing import CliRunner
 
 from scope.cli import main
+from scope.commands.spawn import PENDING_TASK
 
 
 def tmux_available() -> bool:
@@ -44,7 +45,7 @@ def runner():
 
 
 def test_spawn_no_args(runner):
-    """Test spawn without task argument shows error."""
+    """Test spawn without prompt argument shows error."""
     result = runner.invoke(main, ["spawn"])
     assert result.exit_code != 0
     assert "Missing argument" in result.output
@@ -62,7 +63,7 @@ def test_spawn_creates_session(runner, tmp_path, monkeypatch, cleanup_scope_sess
     """Test spawn creates session files and tmux session."""
     monkeypatch.chdir(tmp_path)
 
-    result = runner.invoke(main, ["spawn", "Test task"])
+    result = runner.invoke(main, ["spawn", "Write tests for auth module"])
 
     assert result.exit_code == 0
     session_id = result.output.strip()
@@ -71,8 +72,13 @@ def test_spawn_creates_session(runner, tmp_path, monkeypatch, cleanup_scope_sess
     # Verify filesystem
     session_dir = tmp_path / ".scope" / "sessions" / "0"
     assert session_dir.exists()
-    assert (session_dir / "task").read_text() == "Test task"
+    # Task starts as pending, will be inferred by hooks
+    assert (session_dir / "task").read_text() == PENDING_TASK
     assert (session_dir / "state").read_text() == "running"
+    # Contract should contain the prompt with # Task header
+    contract = (session_dir / "contract.md").read_text()
+    assert "# Task" in contract
+    assert "Write tests for auth module" in contract
 
     # Verify tmux session exists (independent session, not window)
     tmux_session = f"scope-{session_id}"
@@ -100,7 +106,7 @@ def test_spawn_with_parent(runner, tmp_path, monkeypatch, cleanup_scope_sessions
     # Create parent directory first
     (tmp_path / ".scope" / "sessions" / "0").mkdir(parents=True)
 
-    result = runner.invoke(main, ["spawn", "Child task"])
+    result = runner.invoke(main, ["spawn", "Child task prompt"])
 
     assert result.exit_code == 0
     session_id = result.output.strip()
@@ -109,3 +115,7 @@ def test_spawn_with_parent(runner, tmp_path, monkeypatch, cleanup_scope_sessions
     # Verify parent is set correctly
     session_dir = tmp_path / ".scope" / "sessions" / "0.0"
     assert (session_dir / "parent").read_text() == "0"
+    # Contract should contain the prompt
+    contract = (session_dir / "contract.md").read_text()
+    assert "# Task" in contract
+    assert "Child task prompt" in contract

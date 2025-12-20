@@ -198,3 +198,25 @@ def delete_session(session_id: str) -> None:
         raise FileNotFoundError(f"Session {session_id} not found")
 
     shutil.rmtree(session_dir)
+
+
+def get_descendants(session_id: str) -> list[Session]:
+    """Get all descendant sessions (children, grandchildren, etc.).
+
+    Args:
+        session_id: The parent session ID.
+
+    Returns:
+        List of all descendant sessions, sorted deepest-first (for safe deletion).
+    """
+    all_sessions = load_all()
+    descendants = []
+
+    prefix = f"{session_id}."
+    for session in all_sessions:
+        if session.id.startswith(prefix):
+            descendants.append(session)
+
+    # Sort by depth (deepest first) for safe deletion order
+    # Depth is determined by number of dots in the ID
+    return sorted(descendants, key=lambda s: s.id.count("."), reverse=True)

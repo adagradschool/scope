@@ -393,3 +393,35 @@ def select_window(name: str) -> None:
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise TmuxError(f"Failed to select window: {result.stderr}")
+
+
+def send_keys(session_name: str, keys: str, submit: bool = True) -> None:
+    """Send keys to a tmux session.
+
+    Args:
+        session_name: The tmux session to send keys to (e.g., "scope-0").
+        keys: The text to send.
+        submit: Whether to send C-m (Enter) after the keys to submit. Defaults to True.
+
+    Raises:
+        TmuxError: If tmux command fails.
+    """
+    import time
+
+    # Send message text (no -l flag for raw send)
+    cmd = ["tmux", "send-keys", "-t", session_name, keys]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise TmuxError(f"Failed to send keys: {result.stderr}")
+
+    if submit:
+        # Wait before sending Enter
+        time.sleep(1)
+        # C-m (Ctrl+M) is carriage return - submits in Claude Code
+        result = subprocess.run(
+            ["tmux", "send-keys", "-t", session_name, "C-m"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise TmuxError(f"Failed to send C-m: {result.stderr}")
