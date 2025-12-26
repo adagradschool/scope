@@ -49,10 +49,10 @@ def setup() -> None:
     install_hooks()
     click.echo("Hooks installed to ~/.claude/settings.json")
 
-    # 3. Create project CLAUDE.md
-    click.echo("Installing project documentation...")
+    # 3. Create global CLAUDE.md
+    click.echo("Installing global documentation...")
     install_claude_md()
-    click.echo("Documentation installed to .claude/CLAUDE.md")
+    click.echo("Documentation installed to ~/.claude/CLAUDE.md")
 
     click.echo()
     click.echo("Scope is now integrated with Claude Code.")
