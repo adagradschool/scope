@@ -176,10 +176,10 @@ async def test_new_session_creates_session(mock_scope_base):
     app = ScopeApp()
     async with app.run_test() as pilot:
         # Mock in_tmux to return True (in tmux)
-        # Mock create_session and attach_in_split to avoid actually creating tmux sessions
+        # Mock create_window and attach_in_split to avoid actually creating tmux sessions
         with (
             patch("scope.tui.app.in_tmux", return_value=True),
-            patch("scope.tui.app.create_session") as mock_create,
+            patch("scope.tui.app.create_window") as mock_create,
             patch("scope.tui.app.attach_in_split") as mock_attach,
         ):
             await pilot.press("n")
@@ -191,15 +191,15 @@ async def test_new_session_creates_session(mock_scope_base):
             assert sessions[0].task == ""
             assert sessions[0].state == "running"
 
-            # create_session should have been called
+            # create_window should have been called
             mock_create.assert_called_once()
             call_kwargs = mock_create.call_args.kwargs
-            assert call_kwargs["name"] == "scope-0"
+            assert call_kwargs["name"] == "w0"
             assert call_kwargs["command"] == "claude"
             assert call_kwargs["env"] == {"SCOPE_SESSION_ID": "0"}
 
             # attach_in_split should have been called
-            mock_attach.assert_called_once_with("scope-0")
+            mock_attach.assert_called_once_with("w0")
 
 
 @pytest.mark.asyncio
@@ -209,7 +209,7 @@ async def test_new_session_appears_in_table(mock_scope_base):
     async with app.run_test() as pilot:
         with (
             patch("scope.tui.app.in_tmux", return_value=True),
-            patch("scope.tui.app.create_session"),
+            patch("scope.tui.app.create_window"),
             patch("scope.tui.app.attach_in_split"),
         ):
             await pilot.press("n")

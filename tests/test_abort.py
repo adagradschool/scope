@@ -16,6 +16,8 @@ from scope.core.state import (
     update_state,
 )
 
+from tests.helpers import tmux_cmd
+
 
 def tmux_available() -> bool:
     """Check if tmux is available."""
@@ -26,20 +28,23 @@ def tmux_available() -> bool:
 def session_exists(session_name: str) -> bool:
     """Check if a tmux session exists."""
     result = subprocess.run(
-        ["tmux", "has-session", "-t", session_name],
+        tmux_cmd(["has-session", "-t", session_name]),
         capture_output=True,
     )
     return result.returncode == 0
 
 
 @pytest.fixture
-def cleanup_scope_sessions():
-    """Fixture to cleanup scope tmux sessions before and after tests."""
+def cleanup_scope_sessions(cleanup_scope_windows):
+    """Fixture to cleanup scope tmux sessions before and after tests.
+
+    Depends on cleanup_scope_windows to set up socket isolation.
+    """
     for i in range(10):
-        subprocess.run(["tmux", "kill-session", "-t", f"scope-{i}"], capture_output=True)
+        subprocess.run(tmux_cmd(["kill-session", "-t", f"scope-{i}"]), capture_output=True)
     yield
     for i in range(10):
-        subprocess.run(["tmux", "kill-session", "-t", f"scope-{i}"], capture_output=True)
+        subprocess.run(tmux_cmd(["kill-session", "-t", f"scope-{i}"]), capture_output=True)
 
 
 @pytest.fixture
@@ -94,7 +99,7 @@ def test_abort_kills_tmux_session(runner, tmp_path, monkeypatch, cleanup_scope_s
 
     # Create a real tmux session
     subprocess.run(
-        ["tmux", "new-session", "-d", "-s", "scope-0", "cat"],
+        tmux_cmd(["new-session", "-d", "-s", "scope-0", "cat"]),
         capture_output=True,
     )
     assert session_exists("scope-0")

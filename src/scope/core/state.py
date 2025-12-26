@@ -166,6 +166,16 @@ def save_session(session: Session) -> None:
     (session_dir / "parent").write_text(session.parent)
     (session_dir / "tmux").write_text(session.tmux_session)
     (session_dir / "created_at").write_text(session.created_at.isoformat())
+    (session_dir / "alias").write_text(session.alias)
+
+    # Write depends_on file (comma-separated IDs, skip if empty)
+    if session.depends_on:
+        (session_dir / "depends_on").write_text(",".join(session.depends_on))
+    else:
+        # Remove file if it exists and depends_on is empty
+        depends_on_file = session_dir / "depends_on"
+        if depends_on_file.exists():
+            depends_on_file.unlink()
 
 
 def _get_scope_dir() -> Path:
@@ -192,6 +202,18 @@ def load_session(session_id: str) -> Session | None:
     if not session_dir.exists():
         return None
 
+    # Read alias (may not exist for older sessions)
+    alias_file = session_dir / "alias"
+    alias = alias_file.read_text() if alias_file.exists() else ""
+
+    # Read depends_on (may not exist for older sessions)
+    depends_on_file = session_dir / "depends_on"
+    depends_on: list[str] = []
+    if depends_on_file.exists():
+        content = depends_on_file.read_text().strip()
+        if content:
+            depends_on = content.split(",")
+
     return Session(
         id=session_id,
         task=(session_dir / "task").read_text(),
@@ -199,6 +221,8 @@ def load_session(session_id: str) -> Session | None:
         state=(session_dir / "state").read_text(),
         tmux_session=(session_dir / "tmux").read_text(),
         created_at=datetime.fromisoformat((session_dir / "created_at").read_text()),
+        alias=alias,
+        depends_on=depends_on,
     )
 
 
@@ -284,3 +308,98 @@ def get_descendants(session_id: str) -> list[Session]:
     # Sort by depth (deepest first) for safe deletion order
     # Depth is determined by number of dots in the ID
     return sorted(descendants, key=lambda s: s.id.count("."), reverse=True)
+
+
+def resolve_id(id_or_alias: str) -> str | None:
+    """Resolve a session ID or alias to a session ID.
+
+    Args:
+        id_or_alias: Either a numeric session ID (e.g., "0", "0.1") or an alias.
+
+    Returns:
+        The session ID if found, None otherwise.
+    """
+    # First, try as a direct session ID
+    session = load_session(id_or_alias)
+    if session is not None:
+        return id_or_alias
+
+    # Try as an alias
+    session = load_session_by_alias(id_or_alias)
+    if session is not None:
+        return session.id
+
+    return None
+
+
+def load_session_by_alias(alias: str) -> Session | None:
+    """Load a session by its alias.
+
+    Args:
+        alias: The alias to look up.
+
+    Returns:
+        Session object if found, None if no session with that alias exists.
+    """
+    if not alias:
+        return None
+
+    all_sessions = load_all()
+    for session in all_sessions:
+        if session.alias == alias:
+            return session
+
+    return None
+
+
+def get_dependencies(session_id: str) -> list[str]:
+    """Get the list of dependency IDs for a session.
+
+    Args:
+        session_id: The session ID to look up.
+
+    Returns:
+        List of session IDs that this session depends on.
+        Returns empty list if session not found or has no dependencies.
+    """
+    session = load_session(session_id)
+    if session is None:
+        return []
+    return session.depends_on
+
+
+def save_failed_reason(session_id: str, reason: str) -> None:
+    """Save the failure reason for a session.
+
+    Args:
+        session_id: The session ID to save the reason for.
+        reason: The failure reason string.
+
+    Raises:
+        FileNotFoundError: If session doesn't exist.
+    """
+    scope_dir = _get_scope_dir()
+    session_dir = _get_session_dir(scope_dir, session_id)
+
+    if not session_dir.exists():
+        raise FileNotFoundError(f"Session {session_id} not found")
+
+    (session_dir / "failed_reason").write_text(reason)
+
+
+def get_failed_reason(session_id: str) -> str | None:
+    """Get the failure reason for a session.
+
+    Args:
+        session_id: The session ID to look up.
+
+    Returns:
+        The failure reason string if available, None otherwise.
+    """
+    scope_dir = _get_scope_dir()
+    session_dir = _get_session_dir(scope_dir, session_id)
+
+    failed_reason_file = session_dir / "failed_reason"
+    if failed_reason_file.exists():
+        return failed_reason_file.read_text()
+    return None

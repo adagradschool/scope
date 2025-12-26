@@ -11,9 +11,23 @@ from pathlib import Path
 import click
 
 from scope.core.contract import generate_contract
+from scope.core.dag import detect_cycle
 from scope.core.session import Session
-from scope.core.state import ensure_scope_dir, next_id, save_session
-from scope.core.tmux import TmuxError, create_window, send_keys, tmux_window_name
+from scope.core.state import (
+    ensure_scope_dir,
+    load_session_by_alias,
+    next_id,
+    resolve_id,
+    save_session,
+)
+from scope.core.tmux import (
+    TmuxError,
+    create_window,
+    get_scope_session,
+    in_tmux,
+    send_keys,
+    tmux_window_name,
+)
 
 # Placeholder task - will be inferred from first prompt via hooks
 PENDING_TASK = "(pending...)"
@@ -22,13 +36,31 @@ PENDING_TASK = "(pending...)"
 @click.command()
 @click.argument("prompt")
 @click.option(
+    "--id",
+    "alias",
+    default="",
+    help="Human-readable alias for the session (must be unique)",
+)
+@click.option(
+    "--after",
+    "after",
+    default="",
+    help="Comma-separated list of session IDs or aliases this session depends on",
+)
+@click.option(
     "--dangerously-skip-permissions",
     is_flag=True,
     envvar="SCOPE_DANGEROUSLY_SKIP_PERMISSIONS",
     help="Pass --dangerously-skip-permissions to spawned Claude instance",
 )
 @click.pass_context
-def spawn(ctx: click.Context, prompt: str, dangerously_skip_permissions: bool) -> None:
+def spawn(
+    ctx: click.Context,
+    prompt: str,
+    alias: str,
+    after: str,
+    dangerously_skip_permissions: bool,
+) -> None:
     """Spawn a new scope session.
 
     Creates a tmux window running Claude Code with the given prompt.
@@ -47,11 +79,36 @@ def spawn(ctx: click.Context, prompt: str, dangerously_skip_permissions: bool) -
     if ctx.obj and ctx.obj.get("dangerously_skip_permissions"):
         dangerously_skip_permissions = True
 
+    # Validate alias uniqueness if provided
+    if alias:
+        existing = load_session_by_alias(alias)
+        if existing is not None:
+            click.echo(f"Error: alias '{alias}' already exists (session {existing.id})", err=True)
+            raise SystemExit(1)
+
+    # Parse and resolve dependencies
+    depends_on: list[str] = []
+    if after:
+        for dep_ref in after.split(","):
+            dep_ref = dep_ref.strip()
+            if not dep_ref:
+                continue
+            resolved = resolve_id(dep_ref)
+            if resolved is None:
+                click.echo(f"Error: dependency '{dep_ref}' not found", err=True)
+                raise SystemExit(1)
+            depends_on.append(resolved)
+
     # Get parent from environment (for nested sessions)
     parent = os.environ.get("SCOPE_SESSION_ID", "")
 
     # Get next available ID
     session_id = next_id(parent)
+
+    # Check for cycles before creating the session
+    if depends_on and detect_cycle(session_id, depends_on):
+        click.echo("Error: dependency would create a cycle", err=True)
+        raise SystemExit(1)
 
     # Create session object - task will be inferred by hooks
     window_name = tmux_window_name(session_id)
@@ -62,6 +119,8 @@ def spawn(ctx: click.Context, prompt: str, dangerously_skip_permissions: bool) -
         state="running",
         tmux_session=window_name,  # Store window name (kept as tmux_session for compat)
         created_at=datetime.now(timezone.utc),
+        alias=alias,
+        depends_on=depends_on,
     )
 
     # Save session to filesystem
@@ -69,7 +128,7 @@ def spawn(ctx: click.Context, prompt: str, dangerously_skip_permissions: bool) -
 
     # Generate and save contract
     scope_dir = ensure_scope_dir()
-    contract = generate_contract(prompt=prompt)
+    contract = generate_contract(prompt=prompt, depends_on=depends_on if depends_on else None)
     session_dir = scope_dir / "sessions" / session_id
     (session_dir / "contract.md").write_text(contract)
 
@@ -93,7 +152,12 @@ def spawn(ctx: click.Context, prompt: str, dangerously_skip_permissions: bool) -
 
         # Wait for Claude Code to start, then send the contract
         time.sleep(1)
-        send_keys(f":{window_name}", contract)
+        # Use full session:window target when not inside tmux
+        if in_tmux():
+            target = f":{window_name}"
+        else:
+            target = f"{get_scope_session()}:{window_name}"
+        send_keys(target, contract)
 
     except TmuxError as e:
         click.echo(f"Error: {e}", err=True)

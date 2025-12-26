@@ -1,5 +1,6 @@
 """Tests for spawn command."""
 
+import os
 import subprocess
 
 import pytest
@@ -7,6 +8,8 @@ from click.testing import CliRunner
 
 from scope.cli import main
 from scope.commands.spawn import PENDING_TASK
+
+from tests.helpers import tmux_cmd
 
 
 def tmux_available() -> bool:
@@ -16,9 +19,13 @@ def tmux_available() -> bool:
 
 
 def window_exists(window_name: str) -> bool:
-    """Check if a tmux window exists in the scope session."""
+    """Check if a tmux window exists in the test session.
+
+    Uses SCOPE_TMUX_SESSION env var (set by cleanup_scope_windows fixture) for isolation.
+    """
+    session = os.environ.get("SCOPE_TMUX_SESSION", "scope-test")
     result = subprocess.run(
-        ["tmux", "list-windows", "-t", "scope", "-F", "#{window_name}"],
+        tmux_cmd(["list-windows", "-t", session, "-F", "#{window_name}"]),
         capture_output=True,
         text=True,
     )
@@ -28,14 +35,7 @@ def window_exists(window_name: str) -> bool:
     return window_name in windows
 
 
-@pytest.fixture
-def cleanup_scope_windows():
-    """Fixture to cleanup scope tmux windows before and after tests."""
-    # Clean before test - kill the scope session if it exists
-    subprocess.run(["tmux", "kill-session", "-t", "scope"], capture_output=True)
-    yield
-    # Clean after test
-    subprocess.run(["tmux", "kill-session", "-t", "scope"], capture_output=True)
+# Note: cleanup_scope_windows is imported from conftest.py
 
 
 @pytest.fixture

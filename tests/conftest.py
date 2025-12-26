@@ -1,6 +1,70 @@
 """Shared pytest fixtures for scope tests."""
 
+import subprocess
+
 import pytest
+
+
+@pytest.fixture
+def worker_id(request):
+    """Get the pytest-xdist worker ID, or 'master' if not running in parallel.
+
+    This fixture provides a consistent way to get worker isolation regardless
+    of whether tests are run with -n auto or sequentially.
+    """
+    # pytest-xdist sets workerinput on the config when running in parallel
+    if hasattr(request.config, "workerinput"):
+        return request.config.workerinput["workerid"]
+    return "master"
+
+
+def get_worker_socket(worker_id: str) -> str:
+    """Get a unique tmux socket name for the given pytest-xdist worker."""
+    # worker_id is "master" when not running in parallel, or "gw0", "gw1", etc.
+    return f"scope-test-{worker_id}"
+
+
+def get_worker_session(worker_id: str) -> str:
+    """Get a unique tmux session name for the given pytest-xdist worker."""
+    return f"scope-test-{worker_id}"
+
+
+@pytest.fixture
+def cleanup_scope_windows(monkeypatch, worker_id):
+    """Fixture to cleanup scope tmux windows before and after tests.
+
+    Uses an isolated tmux server (via socket) to avoid affecting development sessions.
+    This is critical - without socket isolation, tests can kill the real tmux server.
+
+    Each pytest-xdist worker gets its own tmux socket to enable parallel test execution.
+    """
+    # Get worker-specific socket and session names for parallel isolation
+    test_socket = get_worker_socket(worker_id)
+    test_session = get_worker_session(worker_id)
+
+    # Use isolated tmux server via socket - this is the key isolation mechanism
+    monkeypatch.setenv("SCOPE_TMUX_SOCKET", test_socket)
+    # Use isolated test session name as well
+    monkeypatch.setenv("SCOPE_TMUX_SESSION", test_session)
+
+    # Force create_window to use scope-test session by making it think we're not in tmux
+    # This ensures windows are created in scope-test, not the current dev session
+    monkeypatch.setattr("scope.core.tmux.get_current_session", lambda: None)
+    monkeypatch.setattr("scope.core.tmux.in_tmux", lambda: False)
+    # Also patch in spawn module since it imports directly
+    monkeypatch.setattr("scope.commands.spawn.in_tmux", lambda: False)
+
+    # Clean before test - kill the isolated test server if it exists
+    subprocess.run(
+        ["tmux", "-L", test_socket, "kill-server"],
+        capture_output=True,
+    )
+    yield
+    # Clean after test - kill the isolated test server
+    subprocess.run(
+        ["tmux", "-L", test_socket, "kill-server"],
+        capture_output=True,
+    )
 
 
 @pytest.fixture

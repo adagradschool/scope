@@ -19,6 +19,7 @@ scope-hook = "scope.hooks.handler:main"
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=1.3.0",
+    "pytest-xdist>=3.8.0",
     "ruff>=0.8.0",
 ]
 

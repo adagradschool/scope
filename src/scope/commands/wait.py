@@ -8,10 +8,10 @@ from pathlib import Path
 import click
 from watchfiles import watch
 
-from scope.core.state import ensure_scope_dir, load_session
+from scope.core.state import ensure_scope_dir, get_failed_reason, load_session, resolve_id
 
 
-TERMINAL_STATES = {"done", "aborted"}
+TERMINAL_STATES = {"done", "aborted", "failed"}
 
 
 @click.command()
@@ -19,19 +19,33 @@ TERMINAL_STATES = {"done", "aborted"}
 def wait(session_ids: tuple[str, ...]) -> None:
     """Wait for session(s) to complete.
 
-    Blocks until all sessions reach 'done' or 'aborted' state.
+    Blocks until all sessions reach a terminal state (done, aborted, or failed).
     Outputs result file content (if any). Exit code indicates status:
-    0 = all done, 1 = error, 2 = any aborted.
+    0 = all done, 1 = error, 2 = any aborted, 3 = any failed.
 
-    SESSION_IDS are the IDs of sessions to wait for.
+    SESSION_IDS are the IDs or aliases of sessions to wait for.
 
     Examples:
 
         scope wait 0
 
         scope wait 0 1 2
+
+        scope wait my-task
     """
     scope_dir = ensure_scope_dir()
+
+    # Resolve aliases to session IDs
+    resolved_ids: list[str] = []
+    for session_id in session_ids:
+        resolved = resolve_id(session_id)
+        if resolved is None:
+            click.echo(f"Session {session_id} not found", err=True)
+            raise SystemExit(1)
+        resolved_ids.append(resolved)
+
+    # Use resolved IDs from here on
+    session_ids = tuple(resolved_ids)
 
     # Validate all sessions exist
     pending: dict[str, Path] = {}  # session_id -> session_dir
@@ -80,23 +94,53 @@ def wait(session_ids: tuple[str, ...]) -> None:
             return
 
 
+def _format_header(session_id: str) -> str:
+    """Format session header with alias if available.
+
+    Returns:
+        "[alias (id)]" if session has alias, otherwise "[id]"
+    """
+    session = load_session(session_id)
+    if session and session.alias:
+        return f"[{session.alias} ({session_id})]"
+    return f"[{session_id}]"
+
+
 def _output_results(session_ids: tuple[str, ...], states: dict[str, str]) -> None:
     """Output results for all sessions and exit with appropriate code."""
     scope_dir = ensure_scope_dir()
     any_aborted = False
+    any_failed = False
     multiple = len(session_ids) > 1
 
     for session_id in session_ids:
+        state = states.get(session_id)
+
+        if state == "failed":
+            any_failed = True
+            # Output failure reason if available
+            reason = get_failed_reason(session_id)
+            if reason:
+                if multiple:
+                    click.echo(_format_header(session_id))
+                click.echo(f"Failed: {reason}", nl=False)
+                if multiple:
+                    click.echo("\n")
+            continue
+
         result_file = scope_dir / "sessions" / session_id / "result"
         if result_file.exists():
             if multiple:
-                click.echo(f"[{session_id}]")
+                click.echo(_format_header(session_id))
             click.echo(result_file.read_text(), nl=False)
             if multiple:
                 click.echo("\n")
 
-        if states.get(session_id) == "aborted":
+        if state == "aborted":
             any_aborted = True
 
+    # Failed takes priority over aborted for exit code
+    if any_failed:
+        raise SystemExit(3)
     if any_aborted:
         raise SystemExit(2)

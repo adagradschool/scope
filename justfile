@@ -19,8 +19,12 @@ format:
 lint:
     uv run ruff check src/
 
-# Run tests
+# Run tests (parallel)
 test:
+    uv run pytest tests/ -n auto -q
+
+# Run tests (sequential)
+test-seq:
     uv run pytest tests/ -v
 
 # Run all checks (format, lint, test)

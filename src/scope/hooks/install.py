@@ -5,6 +5,7 @@ settings.json file.
 """
 
 from pathlib import Path
+from uuid import uuid4
 
 import orjson
 
@@ -154,20 +155,25 @@ scope wait $id
 scope poll $id
 ```
 
-## Parallelization
+## Declarative DAG Orchestration
 
-Model your tasks as a DAG. Spawn independent tasks in parallel:
+Model your tasks as a DAG. Use `--id` for naming and `--after` for dependencies:
 
 ```bash
-# GOOD: Parallel independent tasks
-id1=$(scope spawn "task 1")
-id2=$(scope spawn "task 2")
-scope wait $id1 $id2
+# Declare the full DAG upfront
+scope spawn "research auth patterns" --id research
+scope spawn "audit current codebase" --id audit
+scope spawn "implement auth" --id impl --after research,audit
+scope spawn "write tests" --id tests --after impl
+scope spawn "update docs" --id docs --after impl
 
-# Then dependent tasks
-id3=$(scope spawn "task 3 that needs 1 and 2")
-scope wait $id3
+# Only wait on leaf nodes - dependencies auto-resolve
+scope wait tests docs
 ```
+
+Dependencies are self-managed: each session waits for its `--after` targets before starting work. You only need to wait on the terminal nodes.
+
+**Cycle detection**: Scope rejects dependency cycles at spawn time.
 
 ## Nesting
 
@@ -249,3 +255,72 @@ def uninstall_hooks() -> None:
         del settings["hooks"]
 
     settings_path.write_bytes(orjson.dumps(settings, option=orjson.OPT_INDENT_2))
+
+
+def get_ccstatusline_settings_path() -> Path:
+    """Get the path to ccstatusline's settings.json."""
+    return Path.home() / ".config" / "ccstatusline" / "settings.json"
+
+
+def install_ccstatusline() -> None:
+    """Install and configure ccstatusline for Claude Code.
+
+    This function:
+    1. Adds statusLine to ~/.claude/settings.json to enable ccstatusline
+    2. Creates ~/.config/ccstatusline/settings.json with context percentage enabled
+    """
+    # 1. Add statusLine to Claude settings
+    settings_path = get_claude_settings_path()
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if settings_path.exists():
+        content = settings_path.read_bytes()
+        settings = orjson.loads(content) if content else {}
+    else:
+        settings = {}
+
+    settings["statusLine"] = {
+        "type": "command",
+        "command": "npx ccstatusline@latest",
+    }
+    settings_path.write_bytes(orjson.dumps(settings, option=orjson.OPT_INDENT_2))
+
+    # 2. Create ccstatusline config with context percentage
+    ccstatusline_path = get_ccstatusline_settings_path()
+    ccstatusline_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Generate fresh UUIDs for each widget
+    ccstatusline_settings = {
+        "version": 3,
+        "lines": [
+            [
+                {"id": str(uuid4()), "type": "model", "color": "cyan"},
+                {"id": str(uuid4()), "type": "separator"},
+                {"id": str(uuid4()), "type": "context-percentage", "color": "green"},
+                {"id": str(uuid4()), "type": "separator"},
+                {"id": str(uuid4()), "type": "git-branch", "color": "magenta"},
+                {"id": str(uuid4()), "type": "separator"},
+                {"id": str(uuid4()), "type": "git-changes", "color": "yellow"},
+            ],
+            [],
+            [],
+        ],
+        "flexMode": "full-minus-40",
+        "compactThreshold": 60,
+        "colorLevel": 2,
+        "inheritSeparatorColors": False,
+        "globalBold": False,
+        "powerline": {
+            "enabled": False,
+            "separators": ["\ue0b0"],
+            "separatorInvertBackground": [False],
+            "startCaps": [],
+            "endCaps": [],
+            "theme": None,
+            "autoAlign": False,
+        },
+    }
+
+    ccstatusline_path.write_bytes(
+        orjson.dumps(ccstatusline_settings, option=orjson.OPT_INDENT_2)
+    )

@@ -45,24 +45,25 @@ scope poll $id
 scope wait $id
 ```
 
-## Parallelization
+## Declarative DAG Orchestration
 
-Always spawn independent tasks in parallel:
-
-Think about the dependency order of tasks, you can model them as a DAG in your thinking.
+Model your tasks as a DAG. Use `--id` for naming and `--after` for dependencies:
 
 ```bash
-# BAD: Sequential
-id1=$(scope spawn "task 1")
-scope wait $id1
-id2=$(scope spawn "task 2")
-scope wait $id2
+# Declare the full DAG upfront
+scope spawn "research auth patterns" --id research
+scope spawn "audit current codebase" --id audit
+scope spawn "implement auth" --id impl --after research,audit
+scope spawn "write tests" --id tests --after impl
+scope spawn "update docs" --id docs --after impl
 
-# GOOD: Parallel
-id1=$(scope spawn "task 1")
-id2=$(scope spawn "task 2")
-scope wait $id1 $id2
+# Only wait on leaf nodes - dependencies auto-resolve
+scope wait tests docs
 ```
+
+Dependencies are self-managed: each session waits for its `--after` targets before starting work. You only need to wait on the terminal nodes.
+
+**Cycle detection**: Scope rejects dependency cycles at spawn time.
 
 ## When to Spawn
 

@@ -1,6 +1,7 @@
 """Main Textual app for scope TUI."""
 
 import asyncio
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from scope.core.state import (
 )
 from scope.core.tmux import (
     TmuxError,
+    _tmux_cmd,
     attach_in_split,
     create_window,
     detach_to_window,
@@ -227,7 +229,7 @@ class ScopeApp(App):
         # If this session is currently attached, kill the pane first
         if self._attached_window_name == window_name and self._attached_pane_id:
             subprocess.run(
-                ["tmux", "kill-pane", "-t", self._attached_pane_id],
+                _tmux_cmd(["kill-pane", "-t", self._attached_pane_id]),
                 capture_output=True,
             )
             self._attached_pane_id = None

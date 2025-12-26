@@ -6,7 +6,7 @@ Returns session status as JSON.
 import click
 import orjson
 
-from scope.core.state import ensure_scope_dir, load_session
+from scope.core.state import ensure_scope_dir, load_session, resolve_id
 
 
 @click.command()
@@ -16,19 +16,29 @@ def poll(session_id: str) -> None:
 
     Returns JSON with current status and activity.
 
-    SESSION_ID is the ID of the session to poll.
+    SESSION_ID is the ID or alias of the session to poll.
 
     Examples:
 
         scope poll 0
 
         scope poll 0.1
-    """
-    session = load_session(session_id)
 
+        scope poll my-task
+    """
+    # Resolve alias to session ID if needed
+    resolved_id = resolve_id(session_id)
+    if resolved_id is None:
+        click.echo(f"Session {session_id} not found", err=True)
+        raise SystemExit(1)
+
+    session = load_session(resolved_id)
     if session is None:
         click.echo(f"Session {session_id} not found", err=True)
         raise SystemExit(1)
+
+    # Use resolved ID for file lookups
+    session_id = resolved_id
 
     result: dict[str, str] = {"status": session.state}
 

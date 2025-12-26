@@ -18,13 +18,14 @@ def top(dangerously_skip_permissions: bool) -> None:
     Shows all sessions and auto-refreshes on changes.
     If not running inside tmux, automatically starts tmux first.
     """
-    from scope.core.tmux import get_current_session, has_session
+    from scope.core.tmux import get_current_session, get_scope_session, has_session
 
     # If not in tmux, exec into tmux running scope top
     if get_current_session() is None:
-        if has_session("scope"):
+        session_name = get_scope_session()
+        if has_session(session_name):
             # Attach to existing scope session
-            os.execvp("tmux", ["tmux", "attach-session", "-t", "scope"])
+            os.execvp("tmux", ["tmux", "attach-session", "-t", session_name])
         else:
             # Build command with env vars
             scope_cmd = ""
@@ -34,7 +35,7 @@ def top(dangerously_skip_permissions: bool) -> None:
             if dangerously_skip_permissions:
                 scope_cmd += " --dangerously-skip-permissions"
 
-            os.execvp("tmux", ["tmux", "new-session", "-s", "scope", scope_cmd])
+            os.execvp("tmux", ["tmux", "new-session", "-s", session_name, scope_cmd])
 
     from scope.tui.app import ScopeApp
 

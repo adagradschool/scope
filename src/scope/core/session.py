@@ -1,9 +1,9 @@
 """Session dataclass for scope."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
-VALID_STATES = {"pending", "running", "done", "aborted"}
+VALID_STATES = {"pending", "running", "done", "aborted", "failed"}
 
 
 @dataclass
@@ -14,9 +14,11 @@ class Session:
         id: Flat dotted notation (e.g., "0", "0.1", "0.1.2")
         task: One-line description of the task
         parent: Parent session ID (empty string for root sessions)
-        state: Session state - one of "pending", "running", "done", "aborted"
+        state: Session state - one of "pending", "running", "done", "aborted", "failed"
         tmux_session: tmux session name (format: "scope-{id}")
         created_at: Timestamp when session was created
+        alias: Human-readable alias for the session (optional)
+        depends_on: List of session IDs this session depends on (optional)
     """
 
     id: str
@@ -25,6 +27,8 @@ class Session:
     state: str
     tmux_session: str
     created_at: datetime
+    alias: str = ""
+    depends_on: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Validate session state."""

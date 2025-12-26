@@ -15,6 +15,8 @@ from scope.core.tmux import (
     split_window,
 )
 
+from tests.helpers import tmux_cmd
+
 
 def tmux_available() -> bool:
     """Check if tmux is available."""
@@ -23,12 +25,15 @@ def tmux_available() -> bool:
 
 
 @pytest.fixture
-def cleanup_session():
-    """Fixture to cleanup tmux sessions after tests."""
+def cleanup_session(cleanup_scope_windows):
+    """Fixture to cleanup tmux sessions after tests.
+
+    Depends on cleanup_scope_windows to set up socket isolation.
+    """
     sessions = []
     yield sessions
     for name in sessions:
-        subprocess.run(["tmux", "kill-session", "-t", name], capture_output=True)
+        subprocess.run(tmux_cmd(["kill-session", "-t", name]), capture_output=True)
 
 
 @pytest.mark.skipif(not tmux_available(), reason="tmux not installed")
@@ -114,7 +119,7 @@ def test_split_window_in_session(cleanup_session, tmp_path):
     # Note: split_window without target only works when inside tmux
     # For testing, we use tmux send-keys to run the split command inside the session
     result = subprocess.run(
-        ["tmux", "split-window", "-t", name, "-h", "sleep 30"],
+        tmux_cmd(["split-window", "-t", name, "-h", "sleep 30"]),
         capture_output=True,
         text=True,
     )

@@ -24,7 +24,7 @@ def _build_tree(
     """
     # Filter out done/aborted if requested
     if hide_done:
-        # Build set of IDs to hide (done/aborted and their descendants)
+        # Build set of IDs to hide (done/aborted sessions and their descendants)
         hidden_ids: set[str] = set()
         for s in sessions:
             if s.state in {"done", "aborted"}:
@@ -117,6 +117,16 @@ class SessionTable(DataTable):
 
     def _render_sessions(self) -> None:
         """Render sessions to the table."""
+        # Save current selection before clearing
+        selected_session_id: str | None = None
+        if self.cursor_row is not None:
+            try:
+                row_key = self.get_row_at(self.cursor_row)
+                if row_key:
+                    selected_session_id = row_key.value
+            except Exception:
+                pass
+
         self.clear()
 
         # Build tree and iterate in display order
@@ -146,6 +156,14 @@ class SessionTable(DataTable):
                 activity,
                 key=session.id,
             )
+
+        # Restore selection if the session still exists
+        if selected_session_id is not None:
+            try:
+                row_index = self.get_row_index(selected_session_id)
+                self.move_cursor(row=row_index)
+            except Exception:
+                pass  # Session may have been removed
 
     def _get_activity(self, session_id: str) -> str:
         """Get the current activity for a session.
