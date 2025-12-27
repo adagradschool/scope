@@ -263,11 +263,26 @@ def test_detect_cycle_transitive_cycle(mock_scope_base):
 # --- CLI tests for spawn --after ---
 
 
+def _debug_spawn_result(result, label="SPAWN"):
+    """Print debug info for spawn failures."""
+    if result.exit_code != 0:
+        import sys
+        print(f"\n=== {label} FAILED ===", file=sys.stderr)
+        print(f"exit_code: {result.exit_code}", file=sys.stderr)
+        print(f"output: {result.output}", file=sys.stderr)
+        if result.exception:
+            import traceback
+            print(f"exception: {result.exception}", file=sys.stderr)
+            print("".join(traceback.format_exception(type(result.exception), result.exception, result.exception.__traceback__)), file=sys.stderr)
+        print(f"=== END {label} DEBUG ===\n", file=sys.stderr)
+
+
 @requires_tmux
 def test_spawn_after_creates_depends_on_file(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn --after creates depends_on file with correct IDs."""
     # First create a dependency session
     result1 = runner.invoke(main, ["spawn", "--id", "dep1", "First task"])
+    _debug_spawn_result(result1, "SPAWN dep1")
     assert result1.exit_code == 0
     dep1_id = result1.output.strip()
 
