@@ -18,37 +18,8 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v2
 
-      - name: Install tmux and expect
-        run: sudo apt-get update && sudo apt-get install -y tmux expect
-
-      - name: Debug tmux environment
-        run: |
-          echo "=== Environment ==="
-          echo "CI=$CI"
-          echo "TERM=$TERM"
-          echo "HOME=$HOME"
-          echo ""
-          echo "=== tmux binary ==="
-          which tmux
-          tmux -V
-          echo ""
-          echo "=== PTY availability ==="
-          ls -la /dev/pts/ || echo "/dev/pts not available"
-          ls -la /dev/tty || echo "/dev/tty not available"
-          echo ""
-          echo "=== Test session creation ==="
-          tmux -L test-socket new-session -d -s test-session && echo "SUCCESS: session created" || echo "FAILED: session creation"
-          tmux -L test-socket list-sessions || echo "No sessions"
-          tmux -L test-socket kill-server || true
-          echo ""
-          echo "=== Test with explicit TERM ==="
-          TERM=xterm-256color tmux -L test-socket2 new-session -d -s test-session && echo "SUCCESS with TERM=xterm-256color" || echo "FAILED with TERM=xterm-256color"
-          tmux -L test-socket2 kill-server || true
-          echo ""
-          echo "=== Test with unbuffer (PTY) ==="
-          unbuffer sh -c 'tmux -L test-socket3 new-session -d -s test-session' && echo "SUCCESS with unbuffer" || echo "FAILED with unbuffer"
-          tmux -L test-socket3 list-sessions || echo "No sessions"
-          tmux -L test-socket3 kill-server || true
+      - name: Install tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
 
       - name: Install dependencies
         run: just install
