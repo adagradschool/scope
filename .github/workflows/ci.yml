@@ -18,8 +18,8 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v2
 
-      - name: Install tmux
-        run: sudo apt-get update && sudo apt-get install -y tmux
+      - name: Install tmux and expect
+        run: sudo apt-get update && sudo apt-get install -y tmux expect
 
       - name: Install dependencies
         run: just install
@@ -31,4 +31,4 @@ jobs:
         run: just lint
 
       - name: Test
-        run: just test
+        run: unbuffer just test
