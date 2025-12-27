@@ -18,6 +18,9 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v2
 
+      - name: Install tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
+
       - name: Install dependencies
         run: just install
 

@@ -14,6 +14,7 @@ from scope.core.state import (
     resolve_id,
     save_session,
 )
+from tests.conftest import requires_tmux
 
 
 @pytest.fixture
@@ -201,14 +202,9 @@ def test_resolve_id_prefers_numeric_id_over_alias(mock_scope_base):
 # --- CLI tests for spawn --id ---
 
 
+@requires_tmux
 def test_spawn_with_id_creates_alias_file(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn --id creates alias file."""
-    pytest.importorskip("subprocess")
-    import subprocess
-    result = subprocess.run(["which", "tmux"], capture_output=True)
-    if result.returncode != 0:
-        pytest.skip("tmux not installed")
-
     result = runner.invoke(main, ["spawn", "--id", "foo", "Test task"])
 
     assert result.exit_code == 0
@@ -219,14 +215,9 @@ def test_spawn_with_id_creates_alias_file(runner, mock_scope_base, cleanup_scope
     assert alias_file.read_text() == "foo"
 
 
+@requires_tmux
 def test_spawn_duplicate_alias_rejected(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn rejects duplicate alias."""
-    pytest.importorskip("subprocess")
-    import subprocess
-    result = subprocess.run(["which", "tmux"], capture_output=True)
-    if result.returncode != 0:
-        pytest.skip("tmux not installed")
-
     # First spawn with alias
     result1 = runner.invoke(main, ["spawn", "--id", "foo", "First task"])
     assert result1.exit_code == 0
