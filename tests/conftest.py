@@ -1,52 +1,9 @@
 """Shared pytest fixtures for scope tests."""
 
+import os
 import subprocess
 
 import pytest
-
-
-def tmux_works() -> bool:
-    """Check if tmux can actually start a server and create sessions.
-
-    This is more robust than just checking if tmux is installed - CI environments
-    may have tmux installed but not be able to run it properly (no PTY, etc.).
-    """
-    test_socket = "scope-tmux-check"
-    test_session = "check"
-
-    # Try to create a test session
-    result = subprocess.run(
-        ["tmux", "-L", test_socket, "new-session", "-d", "-s", test_session],
-        capture_output=True,
-    )
-    if result.returncode != 0:
-        return False
-
-    # Clean up
-    subprocess.run(
-        ["tmux", "-L", test_socket, "kill-server"],
-        capture_output=True,
-    )
-    return True
-
-
-# Cache the result to avoid running the check multiple times
-_tmux_works_cached: bool | None = None
-
-
-def get_tmux_works() -> bool:
-    """Get cached result of tmux_works check."""
-    global _tmux_works_cached
-    if _tmux_works_cached is None:
-        _tmux_works_cached = tmux_works()
-    return _tmux_works_cached
-
-
-# Skip marker for tests requiring a working tmux environment
-requires_tmux = pytest.mark.skipif(
-    not get_tmux_works(),
-    reason="tmux not available or cannot start sessions in this environment",
-)
 
 
 @pytest.fixture
@@ -97,6 +54,10 @@ def cleanup_scope_windows(monkeypatch, worker_id):
     monkeypatch.setattr("scope.core.tmux.in_tmux", lambda: False)
     # Also patch in spawn module since it imports directly
     monkeypatch.setattr("scope.commands.spawn.in_tmux", lambda: False)
+
+    # Use a long-running command instead of 'claude' which may not exist in CI
+    # 'cat' blocks forever waiting for input, keeping the window alive for tests
+    monkeypatch.setenv("SCOPE_SPAWN_COMMAND", "cat")
 
     # Clean before test - kill the isolated test server if it exists
     subprocess.run(

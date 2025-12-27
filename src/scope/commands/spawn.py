@@ -139,8 +139,9 @@ def spawn(
 
     # Create tmux window with Claude Code
     try:
-        command = "claude"
-        if dangerously_skip_permissions:
+        # Allow overriding command for tests (e.g., "sleep infinity" when claude isn't installed)
+        command = os.environ.get("SCOPE_SPAWN_COMMAND", "claude")
+        if dangerously_skip_permissions and command == "claude":
             command = "claude --dangerously-skip-permissions"
 
         # Build environment for spawned session

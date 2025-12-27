@@ -8,7 +8,6 @@ from click.testing import CliRunner
 
 from scope.cli import main
 from scope.commands.spawn import PENDING_TASK
-from tests.conftest import requires_tmux
 from tests.helpers import tmux_cmd
 
 
@@ -52,7 +51,6 @@ def test_spawn_help(runner):
     assert "Spawn a new scope session" in result.output
 
 
-@requires_tmux
 def test_spawn_creates_session(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn creates session files and tmux window."""
     result = runner.invoke(main, ["spawn", "Write tests for auth module"])
@@ -76,7 +74,6 @@ def test_spawn_creates_session(runner, mock_scope_base, cleanup_scope_windows):
     assert window_exists("w0")
 
 
-@requires_tmux
 def test_spawn_sequential_ids(runner, mock_scope_base, cleanup_scope_windows):
     """Test multiple spawns get sequential IDs."""
     result1 = runner.invoke(main, ["spawn", "Task 1"])
@@ -86,7 +83,6 @@ def test_spawn_sequential_ids(runner, mock_scope_base, cleanup_scope_windows):
     assert result2.output.strip() == "1"
 
 
-@requires_tmux
 def test_spawn_with_parent(runner, mock_scope_base, monkeypatch, cleanup_scope_windows):
     """Test spawn with SCOPE_SESSION_ID creates child session."""
     monkeypatch.setenv("SCOPE_SESSION_ID", "0")
