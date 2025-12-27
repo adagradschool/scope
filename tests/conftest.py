@@ -1,8 +1,14 @@
 """Shared pytest fixtures for scope tests."""
 
+import os
 import subprocess
 
 import pytest
+
+
+def in_ci() -> bool:
+    """Check if we're running in a CI environment."""
+    return os.environ.get("CI", "").lower() == "true"
 
 
 def tmux_works() -> bool:
@@ -35,17 +41,24 @@ _tmux_works_cached: bool | None = None
 
 
 def get_tmux_works() -> bool:
-    """Get cached result of tmux_works check."""
+    """Get cached result of tmux_works check.
+
+    Returns False immediately in CI environments since tmux requires
+    an active PTY/terminal which CI environments typically don't have.
+    """
     global _tmux_works_cached
     if _tmux_works_cached is None:
-        _tmux_works_cached = tmux_works()
+        if in_ci():
+            _tmux_works_cached = False
+        else:
+            _tmux_works_cached = tmux_works()
     return _tmux_works_cached
 
 
 # Skip marker for tests requiring a working tmux environment
 requires_tmux = pytest.mark.skipif(
     not get_tmux_works(),
-    reason="tmux not available or cannot start sessions in this environment",
+    reason="tmux not available (CI environment or cannot start sessions)",
 )
 
 
