@@ -11,6 +11,10 @@ dev:
     uv sync --dev
     uv pip install -e .
 
+# Install locally as tool (force reinstall)
+local:
+    uv tool install . --force --reinstall
+
 # Format code
 format:
     uv run ruff format src/

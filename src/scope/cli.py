@@ -28,7 +28,7 @@ from scope.core.tmux import in_tmux
     envvar="SCOPE_DANGEROUSLY_SKIP_PERMISSIONS",
     help="Pass --dangerously-skip-permissions to spawned Claude instances",
 )
-@click.version_option()
+@click.version_option(package_name="scopeai")
 @click.pass_context
 def main(
     ctx: click.Context, inside_tmux: bool, dangerously_skip_permissions: bool
