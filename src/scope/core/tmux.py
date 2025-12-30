@@ -51,11 +51,14 @@ def is_installed() -> bool:
     Returns:
         True if tmux is installed and accessible, False otherwise.
     """
-    result = subprocess.run(
-        _tmux_cmd(["-V"]),
-        capture_output=True,
-    )
-    return result.returncode == 0
+    try:
+        result = subprocess.run(
+            _tmux_cmd(["-V"]),
+            capture_output=True,
+        )
+        return result.returncode == 0
+    except FileNotFoundError:
+        return False
 
 
 def tmux_session_name(session_id: str) -> str:
