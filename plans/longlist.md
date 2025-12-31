@@ -2,3 +2,5 @@
 - move `.scope` to be global across cwd ? (Debate)
 - make it CC agnostic, (aider/codex)
 - add notifications (this subagent needs human assistance)
+- spawning logic needs a task decomposition step
+  - failure mode: the same task keeps getting spawned infinitely. each spawn should decompose the problem into simpler subproblems. divide and conquer.
