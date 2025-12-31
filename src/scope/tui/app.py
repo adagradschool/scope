@@ -15,6 +15,7 @@ from scope.core.state import (
     delete_session,
     ensure_scope_dir,
     get_global_scope_base,
+    get_root_path,
     load_all,
     next_id,
     save_session,
@@ -156,6 +157,9 @@ class ScopeApp(App):
 
     def on_mount(self) -> None:
         """Called when the app is mounted."""
+        repo_name = get_root_path().name
+        if repo_name:
+            self.title = f"scope · {repo_name}"
         # Enable tmux mouse mode for pane switching
         if in_tmux():
             enable_mouse()

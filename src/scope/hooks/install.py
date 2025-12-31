@@ -373,6 +373,8 @@ def install_ccstatusline() -> None:
                 {"id": str(uuid4()), "type": "separator"},
                 {"id": str(uuid4()), "type": "context-percentage", "color": "green"},
                 {"id": str(uuid4()), "type": "separator"},
+                {"id": str(uuid4()), "type": "cwd", "color": "blue"},
+                {"id": str(uuid4()), "type": "separator"},
                 {"id": str(uuid4()), "type": "git-branch", "color": "magenta"},
                 {"id": str(uuid4()), "type": "separator"},
                 {"id": str(uuid4()), "type": "git-changes", "color": "yellow"},
