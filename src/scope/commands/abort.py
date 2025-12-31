@@ -5,29 +5,8 @@ Kills a scope session and removes it.
 
 import click
 
-from scope.core.state import delete_session, get_descendants, load_session
-from scope.core.tmux import TmuxError, has_session, kill_session, tmux_session_name
-
-
-def abort_single_session(session_id: str) -> None:
-    """Abort a single session (no confirmation, no children check).
-
-    Args:
-        session_id: The session ID to abort.
-    """
-    # Kill the tmux session if it exists
-    tmux_name = tmux_session_name(session_id)
-    if has_session(tmux_name):
-        try:
-            kill_session(tmux_name)
-        except TmuxError as e:
-            click.echo(f"Warning: {e}", err=True)
-
-    # Delete session from filesystem
-    try:
-        delete_session(session_id)
-    except FileNotFoundError:
-        pass  # Already gone
+from scope.core.abort import abort_session_tree
+from scope.core.state import get_descendants, load_session
 
 
 @click.command()
@@ -69,11 +48,13 @@ def abort(session_id: str, yes: bool) -> None:
             click.echo("Aborted.")
             raise SystemExit(0)
 
+    result = abort_session_tree(session_id)
+    for warning in result.warnings:
+        click.echo(f"Warning: {warning}", err=True)
+
     # Abort descendants first (deepest first)
     for descendant in descendants:
-        abort_single_session(descendant.id)
         click.echo(f"Aborted child session {descendant.id}")
 
     # Abort the parent session
-    abort_single_session(session_id)
     click.echo(f"Aborted session {session_id}")
