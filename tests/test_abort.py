@@ -337,3 +337,58 @@ def test_abort_without_children_no_confirmation(runner, tmp_path, monkeypatch):
     assert "child session" not in result.output
     assert "Aborted session 0" in result.output
     assert load_session("0") is None
+
+
+def window_exists(session_name: str, window_name: str) -> bool:
+    """Check if a tmux window exists in a session."""
+    result = subprocess.run(
+        tmux_cmd(["list-windows", "-t", session_name, "-F", "#{window_name}"]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return False
+    windows = result.stdout.strip().split("\n")
+    return window_name in windows
+
+
+@pytest.mark.skipif(not tmux_available(), reason="tmux not installed")
+def test_abort_kills_tmux_window(runner, mock_scope_base, cleanup_scope_windows):
+    """Test abort kills the tmux window in the scope session."""
+
+    # Get the scope session name from env (set by cleanup_scope_windows)
+    import os
+    scope_session = os.environ.get("SCOPE_TMUX_SESSION", "scope")
+
+    # Ensure the scope session exists
+    subprocess.run(
+        tmux_cmd(["new-session", "-d", "-s", scope_session]),
+        capture_output=True,
+    )
+
+    # Create a window in the scope session (simulating a session running as a window)
+    subprocess.run(
+        tmux_cmd(["new-window", "-d", "-t", scope_session, "-n", "w0", "cat"]),
+        capture_output=True,
+    )
+    assert window_exists(scope_session, "w0")
+
+    # Create session state
+    session = Session(
+        id="0",
+        task="Test task",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=datetime.now(timezone.utc),
+    )
+    save_session(session)
+
+    result = runner.invoke(main, ["abort", "0"])
+    assert result.exit_code == 0
+
+    # Verify tmux window was killed
+    assert not window_exists(scope_session, "w0")
+
+    # Verify session was deleted
+    assert load_session("0") is None

@@ -10,8 +10,8 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Static
 
 from scope.core.session import Session
+from scope.core.abort import abort_session_tree, session_tree_ids
 from scope.core.state import (
-    delete_session,
     get_global_scope_base,
     get_root_path,
     load_all,
@@ -31,7 +31,6 @@ from scope.core.tmux import (
     has_window,
     in_tmux,
     detach_client,
-    kill_window,
     pane_target_for_window,
     rename_current_window,
     set_current_window_option,
@@ -371,10 +370,11 @@ class ScopeApp(App):
         session_id = row_key[0]  # First column is ID (may be indented)
         # Remove indentation and tree indicators (▶▼)
         session_id = session_id.lstrip("▶▼ ").strip()
-        window_name = tmux_window_name(session_id)
+        session_ids = session_tree_ids(session_id)
+        window_names = [tmux_window_name(sid) for sid in session_ids]
 
         # If this session is currently attached, kill the pane first
-        if self._attached_window_name == window_name and self._attached_pane_id:
+        if self._attached_window_name in window_names and self._attached_pane_id:
             subprocess.run(
                 _tmux_cmd(["kill-pane", "-t", self._attached_pane_id]),
                 capture_output=True,
@@ -382,18 +382,9 @@ class ScopeApp(App):
             self._attached_pane_id = None
             self._attached_window_name = None
 
-        # Kill tmux window if it exists
-        if has_window(window_name):
-            try:
-                kill_window(window_name)
-            except TmuxError as e:
-                self.notify(f"Warning: {e}", severity="warning")
-
-        # Delete session from filesystem
-        try:
-            delete_session(session_id)
-        except FileNotFoundError:
-            pass  # Already gone
+        result = abort_session_tree(session_id)
+        for warning in result.warnings:
+            self.notify(f"Warning: {warning}", severity="warning")
 
         self.refresh_sessions()
 
