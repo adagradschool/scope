@@ -281,6 +281,10 @@ class ScopeApp(App):
             )
             save_session(session)
 
+            table = self.query_one(SessionTable)
+            table.set_selected_session(session_id)
+            self.refresh_sessions()
+
             # Join the pane into current window
             pane_id = attach_in_split(window_name)
             self._attached_pane_id = pane_id

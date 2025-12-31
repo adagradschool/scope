@@ -86,9 +86,12 @@ class SessionTable(DataTable):
         """Track cursor changes to preserve selection across refreshes."""
         if new_row is not None and self.row_count > 0:
             try:
-                row_key = self.get_row_at(new_row)
-                if row_key is not None:
-                    self._selected_session_id = row_key.value
+                row = self.get_row_at(new_row)
+                if row is not None:
+                    display_id = row[0]
+                    session_id = display_id.lstrip("▶▼ ").strip()
+                    if session_id:
+                        self._selected_session_id = session_id
             except Exception:
                 pass
 
@@ -124,9 +127,25 @@ class SessionTable(DataTable):
         self._hide_done = hide_done
         self._render_sessions()
 
+    def set_selected_session(self, session_id: str | None) -> None:
+        """Set the selected session ID for the next render."""
+        self._selected_session_id = session_id
+
     def _render_sessions(self) -> None:
         """Render sessions to the table."""
-        # Use stored selection (tracked by watch_cursor_row)
+        # Preserve current cursor selection before clearing rows.
+        if self.cursor_row is not None and self.row_count > 0:
+            try:
+                row = self.get_row_at(self.cursor_row)
+                if row is not None:
+                    display_id = row[0]
+                    session_id = display_id.lstrip("▶▼ ").strip()
+                    if session_id:
+                        self._selected_session_id = session_id
+            except Exception:
+                pass
+
+        # Use stored selection (tracked by watch_cursor_row or cursor_row above)
         selected_session_id = self._selected_session_id
 
         self.clear()
