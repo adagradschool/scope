@@ -1,12 +1,14 @@
 """Main Textual app for scope TUI."""
 
 import asyncio
+import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
 from textual.app import App, ComposeResult
-from textual.widgets import DataTable, Footer, Header, Static
+from textual.screen import ModalScreen
+from textual.widgets import Button, DataTable, Footer, Header, Static
 
 from scope.core.session import Session
 from scope.core.state import (
@@ -24,15 +26,78 @@ from scope.core.tmux import (
     create_window,
     detach_to_window,
     enable_mouse,
+    get_current_session,
+    get_scope_session,
     has_window,
     in_tmux,
+    detach_client,
     kill_window,
     pane_target_for_window,
+    rename_current_window,
+    set_current_window_option,
     set_pane_option,
     tmux_window_name,
 )
 from scope.hooks.install import install_tmux_hooks
 from scope.tui.widgets.session_tree import SessionTable
+
+
+class QuitConfirmScreen(ModalScreen[bool]):
+    """Modal screen to confirm quitting scope."""
+
+    BINDINGS = [
+        ("y", "confirm", "Yes"),
+        ("n", "cancel", "No"),
+        ("escape", "cancel", "Cancel"),
+    ]
+
+    CSS = """
+    QuitConfirmScreen {
+        align: center middle;
+    }
+
+    #quit-dialog {
+        width: 50;
+        height: auto;
+        padding: 1 2;
+        background: $surface;
+        border: thick $primary;
+    }
+
+    #quit-message {
+        width: 100%;
+        text-align: center;
+        margin-bottom: 1;
+    }
+
+    #quit-buttons {
+        width: 100%;
+        height: auto;
+        align: center middle;
+    }
+
+    #quit-buttons Button {
+        margin: 0 1;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        from textual.containers import Horizontal, Vertical
+
+        with Vertical(id="quit-dialog"):
+            yield Static("Quit scope? Sessions will keep running.", id="quit-message")
+            with Horizontal(id="quit-buttons"):
+                yield Button("Yes (y)", id="yes", variant="error")
+                yield Button("No (n)", id="no", variant="primary")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "yes")
+
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
 
 
 class ScopeApp(App):
@@ -49,7 +114,7 @@ class ScopeApp(App):
         ("k", "cursor_up", "Up"),
         ("space", "toggle_collapse", "Expand"),
         ("h", "toggle_hide_done", "Hide Done"),
-        ("q", "quit", "Quit"),
+        ("ctrl+c", "quit", "Quit"),
     ]
 
     # Track currently attached pane for detach functionality
@@ -74,6 +139,13 @@ class ScopeApp(App):
         super().__init__()
         self._watcher_task: asyncio.Task | None = None
         self._dangerously_skip_permissions = dangerously_skip_permissions
+        self._detach_client_on_exit = (
+            os.environ.get("SCOPE_TUI_DETACH_ON_EXIT") == "1"
+        )
+        if not self._detach_client_on_exit and in_tmux():
+            current = get_current_session()
+            if current and current == get_scope_session():
+                self._detach_client_on_exit = True
 
     def compose(self) -> ComposeResult:
         """Compose the app layout."""
@@ -87,6 +159,11 @@ class ScopeApp(App):
         # Enable tmux mouse mode for pane switching
         if in_tmux():
             enable_mouse()
+            try:
+                rename_current_window("scope-top")
+                set_current_window_option("remain-on-exit", "off")
+            except TmuxError:
+                pass
         # Ensure tmux hooks are installed (they don't persist across server restarts)
         success, error = install_tmux_hooks()
         if not success:
@@ -104,35 +181,22 @@ class ScopeApp(App):
             except asyncio.CancelledError:
                 pass
 
-        # Kill any attached pane first
-        if self._attached_pane_id:
+        # Detach any attached pane back to its window (don't kill it)
+        if self._attached_pane_id and self._attached_window_name:
             try:
-                subprocess.run(
-                    _tmux_cmd(["kill-pane", "-t", self._attached_pane_id]),
-                    capture_output=True,
-                )
-            except Exception:
-                pass
+                detach_to_window(self._attached_pane_id, self._attached_window_name)
+            except TmuxError:
+                pass  # Pane might already be gone
             self._attached_pane_id = None
             self._attached_window_name = None
 
-        # Terminate all running sessions
-        sessions = load_all()
-        for session in sessions:
-            if session.state != "running":
-                continue
-            window_name = tmux_window_name(session.id)
-            # Kill tmux window if it exists
-            if has_window(window_name):
-                try:
-                    kill_window(window_name)
-                except TmuxError:
-                    pass  # Best effort
-            # Delete session from filesystem
+        if self._detach_client_on_exit and in_tmux():
             try:
-                delete_session(session.id)
-            except FileNotFoundError:
-                pass  # Already gone
+                detach_client()
+            except TmuxError:
+                pass
+
+        # Sessions keep running - user can return with `scope` later
 
     def refresh_sessions(self) -> None:
         """Reload and display all sessions."""
@@ -323,6 +387,21 @@ class ScopeApp(App):
         """Toggle hiding of done/aborted sessions."""
         self._hide_done = not self._hide_done
         self.refresh_sessions()
+
+    def action_quit(self) -> None:
+        """Show confirmation dialog before quitting."""
+
+        def handle_quit_response(confirmed: bool) -> None:
+            if confirmed:
+                self.action_detach()
+                if in_tmux():
+                    try:
+                        set_current_window_option("remain-on-exit", "off")
+                    except TmuxError:
+                        pass
+                self.exit()
+
+        self.push_screen(QuitConfirmScreen(), handle_quit_response)
 
     async def _watch_sessions(self) -> None:
         """Watch scope directory for changes and refresh."""

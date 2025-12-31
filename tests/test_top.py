@@ -1,8 +1,6 @@
 """Tests for scope top TUI."""
 
 from datetime import datetime, timezone
-from unittest.mock import patch
-
 import pytest
 
 from scope.core.session import Session
@@ -53,17 +51,18 @@ async def test_app_displays_sessions(mock_scope_base):
 
 @pytest.mark.asyncio
 async def test_app_quit_binding(mock_scope_base):
-    """Test that q quits the app."""
+    """Test that Ctrl+C quits the app."""
     app = ScopeApp()
     async with app.run_test() as pilot:
-        await pilot.press("q")
+        await pilot.press("ctrl+c")
+        await pilot.press("y")
         # App should have exited
         assert not app.is_running
 
 
 @pytest.mark.asyncio
-async def test_app_quit_terminates_running_sessions(mock_scope_base):
-    """Test that quitting the app terminates all running sessions."""
+async def test_app_quit_keeps_running_sessions(mock_scope_base):
+    """Test that quitting the app keeps running sessions."""
     # Create a running session
     running_session = Session(
         id="0",
@@ -89,24 +88,16 @@ async def test_app_quit_terminates_running_sessions(mock_scope_base):
     sessions = load_all()
     assert len(sessions) == 2
 
-    # Mock tmux functions - must be applied for entire app lifecycle
-    # since on_unmount runs during app shutdown
-    with (
-        patch("scope.tui.app.has_window", return_value=True),
-        patch("scope.tui.app.kill_window") as mock_kill,
-    ):
-        app = ScopeApp()
-        async with app.run_test() as pilot:
-            await pilot.press("q")
+    app = ScopeApp()
+    async with app.run_test() as pilot:
+        await pilot.press("ctrl+c")
+        await pilot.press("y")
 
-        # kill_window should have been called for the running session
-        mock_kill.assert_called_once_with("w0")
-
-    # Running session should be deleted, done session preserved
+    # Sessions should be preserved
     sessions = load_all()
-    assert len(sessions) == 1
-    assert sessions[0].id == "1"
-    assert sessions[0].state == "done"
+    assert len(sessions) == 2
+    session_ids = {session.id for session in sessions}
+    assert session_ids == {"0", "1"}
 
 
 @pytest.mark.asyncio

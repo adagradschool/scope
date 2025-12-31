@@ -17,7 +17,17 @@ from scope.commands.setup import setup
 from scope.commands.spawn import spawn
 from scope.commands.top import top
 from scope.commands.wait import wait
-from scope.core.tmux import in_tmux
+from scope.core.tmux import (
+    TmuxError,
+    create_window,
+    get_scope_session,
+    has_session,
+    has_window_in_session,
+    in_tmux,
+    is_window_dead,
+    kill_window_in_session,
+    select_window_in_session,
+)
 
 
 @click.group(invoke_without_command=True)
@@ -50,17 +60,54 @@ def main(
 
     # No subcommand - launch the TUI
     if not in_tmux():
-        # Not in tmux - launch tmux with scope inside
-        # Use -A to attach if session exists, or create if it doesn't
-        # Build command with env vars prefixed (tmux doesn't inherit parent env reliably)
-        scope_cmd = ""
+        session_name = get_scope_session()
+        window_name = "scope-top"
+        scope_env = {"SCOPE_TUI_DETACH_ON_EXIT": "1"}
+        scope_cmd = "scope --inside-tmux"
         if dangerously_skip_permissions:
-            scope_cmd = "SCOPE_DANGEROUSLY_SKIP_PERMISSIONS=1 "
-        scope_cmd += "scope --inside-tmux"
-        if dangerously_skip_permissions:
+            scope_env["SCOPE_DANGEROUSLY_SKIP_PERMISSIONS"] = "1"
             scope_cmd += " --dangerously-skip-permissions"
+        env_prefix = " ".join(f"{k}={v}" for k, v in scope_env.items())
+        scope_cmd_with_env = f"{env_prefix} {scope_cmd}"
 
-        os.execvp("tmux", ["tmux", "new-session", "-A", "-s", "scope-main", scope_cmd])
+        if has_session(session_name):
+            if has_window_in_session(session_name, window_name):
+                if is_window_dead(session_name, window_name):
+                    try:
+                        kill_window_in_session(session_name, window_name)
+                    except TmuxError:
+                        pass
+                    create_window(
+                        name=window_name,
+                        command=scope_cmd,
+                        env=scope_env,
+                    )
+            else:
+                create_window(
+                    name=window_name,
+                    command=scope_cmd,
+                    env=scope_env,
+                )
+
+            try:
+                select_window_in_session(session_name, window_name)
+            except TmuxError:
+                pass
+
+            os.execvp("tmux", ["tmux", "attach-session", "-t", session_name])
+
+        os.execvp(
+            "tmux",
+            [
+                "tmux",
+                "new-session",
+                "-s",
+                session_name,
+                "-n",
+                window_name,
+                scope_cmd_with_env,
+            ],
+        )
     else:
         # Already in tmux - run the TUI directly
         ctx.invoke(top, dangerously_skip_permissions=dangerously_skip_permissions)
