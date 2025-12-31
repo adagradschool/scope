@@ -58,6 +58,12 @@ scope setup
 
 # Launch the dashboard
 scope
+
+# Update to latest version
+scope update
+
+# Or install a specific version
+scope update 0.1.3
 ```
 
 That's it. Now from any Claude Code session:
