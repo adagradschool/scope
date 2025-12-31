@@ -51,11 +51,14 @@ def is_installed() -> bool:
     Returns:
         True if tmux is installed and accessible, False otherwise.
     """
-    result = subprocess.run(
-        _tmux_cmd(["-V"]),
-        capture_output=True,
-    )
-    return result.returncode == 0
+    try:
+        result = subprocess.run(
+            _tmux_cmd(["-V"]),
+            capture_output=True,
+        )
+        return result.returncode == 0
+    except FileNotFoundError:
+        return False
 
 
 def tmux_session_name(session_id: str) -> str:
@@ -196,7 +199,7 @@ def ensure_scope_session() -> None:
         return
 
     # Create a new detached session
-    # The initial window will be replaced or used for scope top
+    # The initial window will be replaced or used for the scope TUI
     cmd = _tmux_cmd(["new-session", "-d", "-s", session_name])
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
@@ -324,6 +327,97 @@ def kill_session(name: str) -> None:
         raise TmuxError(f"Failed to kill session {name}: {result.stderr}")
 
 
+def detach_client() -> None:
+    """Detach the current tmux client without stopping sessions."""
+    result = subprocess.run(
+        _tmux_cmd(["detach-client"]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise TmuxError(f"Failed to detach client: {result.stderr}")
+
+
+def rename_current_window(name: str) -> None:
+    """Rename the current tmux window."""
+    result = subprocess.run(
+        _tmux_cmd(["rename-window", name]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise TmuxError(f"Failed to rename window: {result.stderr}")
+
+
+def set_current_window_option(option: str, value: str) -> None:
+    """Set a window option on the current window."""
+    result = subprocess.run(
+        _tmux_cmd(["set-option", "-w", "-t", ":", option, value]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise TmuxError(f"Failed to set window option: {result.stderr}")
+
+
+def has_window_in_session(session_name: str, window_name: str) -> bool:
+    """Check if a tmux window exists in a specific session."""
+    result = subprocess.run(
+        _tmux_cmd(["list-windows", "-t", session_name, "-F", "#{window_name}"]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return False
+    windows = result.stdout.strip().split("\n")
+    return window_name in windows
+
+
+def is_window_dead(session_name: str, window_name: str) -> bool:
+    """Return True if all panes in a window are dead."""
+    result = subprocess.run(
+        _tmux_cmd(
+            [
+                "list-panes",
+                "-t",
+                f"{session_name}:{window_name}",
+                "-F",
+                "#{pane_dead}",
+            ]
+        ),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return True
+    values = [value for value in result.stdout.strip().split("\n") if value]
+    if not values:
+        return True
+    return all(value.strip() == "1" for value in values)
+
+
+def select_window_in_session(session_name: str, window_name: str) -> None:
+    """Select a window by name in a specific session."""
+    result = subprocess.run(
+        _tmux_cmd(["select-window", "-t", f"{session_name}:{window_name}"]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise TmuxError(f"Failed to select window: {result.stderr}")
+
+
+def kill_window_in_session(session_name: str, window_name: str) -> None:
+    """Kill a tmux window by name in a specific session."""
+    result = subprocess.run(
+        _tmux_cmd(["kill-window", "-t", f"{session_name}:{window_name}"]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise TmuxError(f"Failed to kill window {window_name}: {result.stderr}")
+
+
 def get_current_session() -> str | None:
     """Get the name of the current tmux session.
 
@@ -338,6 +432,48 @@ def get_current_session() -> str | None:
     if result.returncode == 0:
         return result.stdout.strip()
     return None
+
+
+def get_current_pane_id() -> str | None:
+    """Get the pane ID for the current tmux pane."""
+    result = subprocess.run(
+        _tmux_cmd(["display-message", "-p", "#{pane_id}"]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return None
+
+
+def pane_target_for_window(window_name: str) -> str:
+    """Build a pane target for the first pane in a window."""
+    current = get_current_session()
+    if current is None:
+        return f"{get_scope_session()}:{window_name}.0"
+    return f":{window_name}.0"
+
+
+def set_pane_option(target: str, option: str, value: str) -> None:
+    """Set a pane-local option."""
+    result = subprocess.run(
+        _tmux_cmd(["set-option", "-p", "-t", target, option, value]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise TmuxError(f"Failed to set pane option: {result.stderr}")
+
+
+def select_pane(pane_id: str) -> None:
+    """Select a pane by ID in the current window."""
+    result = subprocess.run(
+        _tmux_cmd(["select-pane", "-t", pane_id]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise TmuxError(f"Failed to select pane: {result.stderr}")
 
 
 def split_window(

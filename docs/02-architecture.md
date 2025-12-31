@@ -84,7 +84,7 @@ scope-hook = "scope.hooks.handler:main"
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                  CLI                                        │
 │                                (Click)                                      │
-│     scope spawn    scope poll    scope wait    scope top    scope setup     │
+│     scope spawn    scope poll    scope wait    scope    scope setup         │
 └────────┬──────────────┬─────────────┬────────────┬──────────────┬───────────┘
          │              │             │            │              │
          ▼              ▼             ▼            ▼              ▼
@@ -172,9 +172,10 @@ scope
 ├── spawn <task> [--input PATH]     → session ID (e.g., "0")
 ├── poll <id>                       → JSON {status, activity, result}
 ├── wait <id>... [--timeout N]      → JSON {results: [...]}
-├── top                             → Launch TUI
 ├── setup                           → Install hooks + check tmux
 └── abort <id>                      → Kill session and descendants
+
+scope                               → Launch TUI
 ```
 
 **Environment:**
@@ -317,7 +318,7 @@ ScopeApp(App)
 ### 1. User starts scope
 
 ```
-$ scope top
+$ scope
   → App.compose() builds UI
   → load_all() reads .scope/sessions/
   → build_tree() creates hierarchy
@@ -603,7 +604,7 @@ User's terminal:
 
 | Action | Current | New |
 |--------|---------|-----|
-| Entry point | `scope top` (requires tmux) | `scope` (auto-launches tmux) |
+| Entry point | `scope` (requires tmux) | `scope` (auto-launches tmux) |
 | `n` (new) | Creates window, stays on scope | Splits right, opens Claude Code |
 | `enter` (attach) | Switches window (leaves scope) | Splits right, attaches to session |
 | Close split | N/A | Detaches, returns to scope |

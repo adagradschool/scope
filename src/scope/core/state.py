@@ -2,7 +2,7 @@
 
 All session data is stored in ~/.scope/repos/{dirname}-{hash}/sessions/{id}/ with individual files:
 - task: One-line task description
-- state: Current state (running, done, aborted)
+- state: Current state (running, done, aborted, exited)
 - parent: Parent session ID (empty for root)
 - tmux: tmux session name
 - created_at: ISO format timestamp
@@ -221,7 +221,7 @@ def update_state(session_id: str, state: str) -> None:
 
     Args:
         session_id: The session ID to update.
-        state: New state value (running, done, aborted).
+        state: New state value (running, done, aborted, exited).
 
     Raises:
         FileNotFoundError: If session doesn't exist.

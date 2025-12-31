@@ -14,6 +14,7 @@ from pathlib import Path
 import click
 import orjson
 
+from scope.core.project import get_global_scope_base_for
 from scope.core.state import get_global_scope_base
 
 
@@ -122,7 +123,12 @@ def activity() -> None:
 
     activity_str = infer_activity(tool_name, tool_input)
     activity_file = session_dir / "activity"
-    activity_file.write_text(activity_str)
+    if activity_file.exists():
+        existing = activity_file.read_text()
+        prefix = "" if existing.endswith("\n") or not existing else "\n"
+        activity_file.write_text(f"{existing}{prefix}{activity_str}")
+    else:
+        activity_file.write_text(activity_str)
 
 
 def summarize_task(prompt: str) -> str:
@@ -268,10 +274,72 @@ def stop() -> None:
     state_file = session_dir / "state"
     state_file.write_text("done")
 
-    # Clear activity
-    activity_file = session_dir / "activity"
-    if activity_file.exists():
-        activity_file.write_text("")
+
+@main.command("pane-died")
+@click.argument("window_name")
+@click.argument("pane_id")
+@click.argument("scope_session_id", required=False)
+@click.argument("pane_path", required=False)
+def pane_died(
+    window_name: str,
+    pane_id: str,
+    scope_session_id: str | None = None,
+    pane_path: str | None = None,
+) -> None:
+    """Handle tmux pane-died hook - mark session as exited if it was running.
+
+    Called by tmux when a pane's program dies (with remain-on-exit=on).
+    Converts window name to session ID and updates state to 'exited'.
+
+    Args:
+        window_name: The tmux window name (e.g., "w0-2" for session "0.2")
+        pane_id: The tmux pane ID (e.g., "%5") to kill after processing
+        scope_session_id: Explicit scope session ID set on the pane (optional)
+        pane_path: The pane's working directory (for project resolution)
+    """
+    import subprocess
+
+    # Backward-compat: old hook passes pane_path as third arg
+    if scope_session_id and pane_path is None and Path(scope_session_id).is_absolute():
+        pane_path = scope_session_id
+        scope_session_id = None
+
+    # Determine session id from pane option or window name
+    session_id = scope_session_id or ""
+    if not session_id:
+        if not window_name.startswith("w"):
+            return
+        session_id = window_name[1:].replace("-", ".")
+
+    # Resolve scope base from pane path when provided (tmux hooks run out-of-tree)
+    scope_base = get_global_scope_base()
+    if pane_path:
+        scope_base = get_global_scope_base_for(Path(pane_path))
+
+    # Get session directory
+    session_dir = scope_base / "sessions" / session_id
+    if not session_dir.exists():
+        return
+
+    state_file = session_dir / "state"
+    if not state_file.exists():
+        return
+
+    # Mark as exited if running or done (pane exit is authoritative)
+    current_state = state_file.read_text().strip()
+    if current_state in ("running", "done"):
+        state_file.write_text("exited")
+
+    # Touch trigger file to notify TUI
+    trigger_file = scope_base / "pane-exited"
+    trigger_file.touch()
+
+    # Kill the pane (it's kept alive by remain-on-exit so we can read window_name)
+    if pane_id:
+        try:
+            subprocess.run(["tmux", "kill-pane", "-t", pane_id], capture_output=True)
+        except FileNotFoundError:
+            pass
 
 
 if __name__ == "__main__":

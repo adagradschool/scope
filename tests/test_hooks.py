@@ -286,8 +286,8 @@ def test_stop_hook_marks_done(runner, setup_session):
     assert state_file.read_text() == "done"
 
 
-def test_stop_hook_clears_activity(runner, setup_session):
-    """Test stop hook clears activity file."""
+def test_stop_hook_preserves_activity(runner, setup_session):
+    """Test stop hook preserves activity file."""
     session_dir = setup_session
     activity_file = session_dir / "activity"
 
@@ -297,7 +297,7 @@ def test_stop_hook_clears_activity(runner, setup_session):
     result = runner.invoke(main, ["stop"])
 
     assert result.exit_code == 0
-    assert activity_file.read_text() == ""
+    assert activity_file.read_text() == "editing file.py"
 
 
 def test_stop_hook_captures_result(runner, setup_session, tmp_path):

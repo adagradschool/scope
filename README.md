@@ -51,13 +51,13 @@ Your main session becomes a coordinator, not a garbage collector.
 uv tool install scopeai
 
 # Or run directly without installing
-uvx scopeai top
+uvx scopeai
 
 # Run setup (installs hooks, checks dependencies)
 scope setup
 
 # Launch the dashboard
-scope top
+scope
 ```
 
 That's it. Now from any Claude Code session:
@@ -85,10 +85,10 @@ The Task tool is a blind subprocess. Scope gives you a **visible, controllable s
 
 ## Usage
 
-### For Humans: `scope top`
+### For Humans: `scope`
 
 ```bash
-scope top
+scope
 ```
 
 ```
@@ -100,7 +100,7 @@ scope top
 │  ▶ 1   Write tests for user module ● running   jest --watch          │
 │                                                                      │
 ├──────────────────────────────────────────────────────────────────────┤
-│  n new   ↵ attach   x abort   d hide done   q quit                   │
+│  n new   ↵ attach   x abort   d hide done                            │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -112,7 +112,6 @@ scope top
 | `j/k` | Navigate |
 | `h/l` | Collapse/expand |
 | `d` | Toggle completed sessions |
-| `q` | Quit (sessions keep running) |
 
 ### For Claude Code: Programmatic Interface
 
@@ -176,7 +175,7 @@ Parallelism just means you can do this faster.
 - Each session is a real Claude Code process in tmux
 - State lives in `.scope/sessions/` (inspectable with standard Unix tools)
 - Hooks track activity automatically (no model self-reporting)
-- `scope top` watches for changes and updates instantly
+- `scope` watches for changes and updates instantly
 
 See [docs/02-architecture.md](docs/02-architecture.md) for technical details.
 

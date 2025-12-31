@@ -8,7 +8,11 @@ import platform
 import click
 
 from scope.core.tmux import is_installed as tmux_is_installed
-from scope.hooks.install import install_ccstatusline, install_claude_md, install_hooks
+from scope.hooks.install import (
+    install_ccstatusline,
+    install_claude_md,
+    install_hooks,
+)
 
 
 @click.command()

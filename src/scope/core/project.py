@@ -9,26 +9,27 @@ import subprocess
 from pathlib import Path
 
 
-def get_root_path() -> Path:
-    """Get the root path for scope storage (git root or cwd).
-
-    Returns:
-        Git repository root if in a git repo, otherwise current working directory.
-    """
+def get_root_path_for(path: Path) -> Path:
+    """Get the root path for scope storage (git root or given path)."""
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
+            ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
             capture_output=True,
             text=True,
             check=True,
         )
         return Path(result.stdout.strip())
     except subprocess.CalledProcessError:
-        return Path.cwd()
+        return path
 
 
-def get_project_identifier() -> str:
-    """Get a unique identifier for the current project.
+def get_root_path() -> Path:
+    """Get the root path for scope storage (git root or cwd)."""
+    return get_root_path_for(Path.cwd())
+
+
+def get_project_identifier_for(path: Path) -> str:
+    """Get a unique identifier for a project path.
 
     Returns:
         A string like "dirname-hash" where:
@@ -38,10 +39,21 @@ def get_project_identifier() -> str:
     Example:
         For /Users/ada/fun/scope -> "scope-abc12345"
     """
-    root_path = get_root_path()
+    root_path = get_root_path_for(path)
     dir_name = root_path.name
     path_hash = hashlib.sha256(str(root_path).encode()).hexdigest()[:8]
     return f"{dir_name}-{path_hash}"
+
+
+def get_project_identifier() -> str:
+    """Get a unique identifier for the current project."""
+    return get_project_identifier_for(Path.cwd())
+
+
+def get_global_scope_base_for(path: Path) -> Path:
+    """Get the global scope directory for a given project path."""
+    identifier = get_project_identifier_for(path)
+    return Path.home() / ".scope" / "repos" / identifier
 
 
 def get_global_scope_base() -> Path:
@@ -53,5 +65,4 @@ def get_global_scope_base() -> Path:
     Returns:
         Path to the global scope directory for this project.
     """
-    identifier = get_project_identifier()
-    return Path.home() / ".scope" / "repos" / identifier
+    return get_global_scope_base_for(Path.cwd())

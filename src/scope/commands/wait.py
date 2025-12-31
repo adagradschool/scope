@@ -16,7 +16,7 @@ from scope.core.state import (
 )
 
 
-TERMINAL_STATES = {"done", "aborted", "failed"}
+TERMINAL_STATES = {"done", "aborted", "failed", "exited"}
 
 
 @click.command()
@@ -141,7 +141,7 @@ def _output_results(session_ids: tuple[str, ...], states: dict[str, str]) -> Non
             if multiple:
                 click.echo("\n")
 
-        if state == "aborted":
+        if state in {"aborted", "exited"}:
             any_aborted = True
 
     # Failed takes priority over aborted for exit code

@@ -25,9 +25,12 @@ from scope.core.tmux import (
     create_window,
     get_scope_session,
     in_tmux,
+    pane_target_for_window,
     send_keys,
+    set_pane_option,
     tmux_window_name,
 )
+from scope.hooks.install import install_tmux_hooks
 
 # Placeholder task - will be inferred from first prompt via hooks
 PENDING_TASK = "(pending...)"
@@ -126,18 +129,10 @@ def spawn(
         depends_on=depends_on,
     )
 
-    # Save session to filesystem
-    save_session(session)
-
-    # Generate and save contract
-    scope_dir = ensure_scope_dir()
-    contract = generate_contract(
-        prompt=prompt, depends_on=depends_on if depends_on else None
-    )
-    session_dir = scope_dir / "sessions" / session_id
-    (session_dir / "contract.md").write_text(contract)
-
-    # Create tmux window with Claude Code
+    # Create tmux window with Claude Code BEFORE saving session
+    # This prevents a race where load_all() sees a "running" session
+    # with a tmux_session set but the window doesn't exist yet,
+    # causing it to be incorrectly marked as "aborted"
     try:
         # Allow overriding command for tests (e.g., "sleep infinity" when claude isn't installed)
         command = os.environ.get("SCOPE_SPAWN_COMMAND", "claude")
@@ -155,6 +150,31 @@ def spawn(
             cwd=Path.cwd(),  # Project root
             env=env,
         )
+
+        try:
+            set_pane_option(
+                pane_target_for_window(window_name),
+                "@scope_session_id",
+                session_id,
+            )
+        except TmuxError:
+            pass
+
+        # Ensure tmux hook is installed AFTER create_window (so server exists)
+        # Idempotent - safe to call on every spawn
+        install_tmux_hooks()
+
+        # Now that window exists, save session to filesystem
+        save_session(session)
+
+        # Generate and save contract
+        scope_dir = ensure_scope_dir()
+        session_dir = scope_dir / "sessions" / session_id
+
+        contract = generate_contract(
+            prompt=prompt, depends_on=depends_on if depends_on else None
+        )
+        (session_dir / "contract.md").write_text(contract)
 
         # Wait for Claude Code to start, then send the contract
         time.sleep(1)

@@ -130,7 +130,7 @@ scope wait <id> [<id2> ...]                          # → blocks until complete
 
 **For the human operator (interactive):**
 ```bash
-scope top  # Opens the control panel
+scope  # Opens the control panel
 ```
 
 ## The Filesystem is the IPC Layer

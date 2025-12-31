@@ -48,8 +48,13 @@ def poll(session_id: str) -> None:
     # Activity will be added in Slice 7
     activity_file = session_dir / "activity"
     if activity_file.exists():
-        activity = activity_file.read_text().strip()
+        activity = ""
+        for line in activity_file.read_text().splitlines():
+            if line.strip():
+                activity = line.strip()
         if activity:
+            if session.state in {"done", "aborted", "exited"}:
+                activity = past_tense_activity(activity)
             result["activity"] = activity
 
     # Include result if session is done
@@ -58,3 +63,24 @@ def poll(session_id: str) -> None:
         result["result"] = result_file.read_text()
 
     click.echo(orjson.dumps(result).decode())
+
+
+def past_tense_activity(activity: str) -> str:
+    """Convert present-tense activity to past tense for done sessions."""
+    conversions = {
+        "reading ": "read ",
+        "editing ": "edited ",
+        "running: ": "ran: ",
+        "searching: ": "searched: ",
+        "spawning subtask": "spawned subtask",
+        "finding: ": "found: ",
+        "reading file": "read file",
+        "editing file": "edited file",
+        "running command": "ran command",
+        "searching": "searched",
+        "finding files": "found files",
+    }
+    for prefix, replacement in conversions.items():
+        if activity.startswith(prefix):
+            return replacement + activity[len(prefix) :]
+    return activity

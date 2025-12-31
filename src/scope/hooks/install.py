@@ -1,9 +1,12 @@
 """Hook installation for Claude Code integration.
 
 This module provides functions to install scope hooks into Claude Code's
-settings.json file.
+settings.json file and tmux hooks for pane exit detection.
 """
 
+import shlex
+import subprocess
+import sys
 from pathlib import Path
 from uuid import uuid4
 
@@ -138,7 +141,7 @@ When in doubt, spawn. Your subagents have full Claude Code capabilities.
 The built-in Task and Explore tools are **opaque**. The user cannot see progress or intervene.
 
 Scope provides **transparency**:
-- User sees all sessions via `scope top`
+- User sees all sessions via `scope`
 - User can attach and interact directly
 - User can abort runaway tasks
 
@@ -215,6 +218,78 @@ def install_claude_md() -> None:
         content = CLAUDE_MD_CONTENT
 
     claude_md_path.write_text(content)
+
+
+def install_tmux_hooks() -> tuple[bool, str | None]:
+    """Install tmux hooks for pane exit detection.
+
+    Sets up a global pane-died hook that calls scope-hook to update
+    session state when a pane's program exits.
+
+    We use pane-died (not pane-exited) because windows are created with
+    remain-on-exit=on. This keeps the pane alive so we can read #{window_name}
+    to identify which session exited.
+
+    Returns:
+        Tuple of (success, error_message). On success: (True, None).
+        On failure: (False, error_message) with details about what went wrong.
+    """
+    from scope.core.tmux import _tmux_cmd
+
+    # Set global remain-on-exit so panes stay alive for hook to read window name
+    remain_result = subprocess.run(
+        _tmux_cmd(["set-option", "-g", "remain-on-exit", "on"]),
+        capture_output=True,
+        text=True,
+    )
+
+    if remain_result.returncode != 0:
+        error = remain_result.stderr.strip() or "Unknown error"
+        return False, f"Failed to set remain-on-exit option: {error}"
+
+    # The hook command passes the window name and pane id to the handler
+    # #{window_name} is expanded by tmux (e.g., "w0-2")
+    # #{pane_id} is needed to kill the pane after processing (since remain-on-exit is on)
+    # Use the current Python to avoid stale entry point scripts
+    python_exec = shlex.quote(sys.executable)
+    hook_cmd = (
+        'run-shell "'
+        f"{python_exec} -m scope.hooks.handler pane-died "
+        '\\"#{window_name}\\" \\"#{pane_id}\\" \\"#{@scope_session_id}\\" '
+        '\\"#{pane_current_path}\\""'
+    )
+
+    result = subprocess.run(
+        _tmux_cmd(["set-hook", "-g", "pane-died", hook_cmd]),
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        error = result.stderr.strip() or "Unknown error"
+        return False, f"Failed to set pane-died hook: {error}"
+
+    # Verify the hook was actually set by reading it back
+    verify = subprocess.run(
+        _tmux_cmd(["show-hooks", "-g", "pane-died"]),
+        capture_output=True,
+        text=True,
+    )
+
+    if "pane-died" not in verify.stdout or "scope.hooks.handler" not in verify.stdout:
+        return False, "Hook verification failed: hook was not set correctly"
+
+    return True, None
+
+
+def uninstall_tmux_hooks() -> None:
+    """Remove tmux hooks installed by scope."""
+    from scope.core.tmux import _tmux_cmd
+
+    subprocess.run(
+        _tmux_cmd(["set-hook", "-gu", "pane-died"]),
+        capture_output=True,
+    )
 
 
 def uninstall_hooks() -> None:
@@ -297,6 +372,8 @@ def install_ccstatusline() -> None:
                 {"id": str(uuid4()), "type": "model", "color": "cyan"},
                 {"id": str(uuid4()), "type": "separator"},
                 {"id": str(uuid4()), "type": "context-percentage", "color": "green"},
+                {"id": str(uuid4()), "type": "separator"},
+                {"id": str(uuid4()), "type": "cwd", "color": "blue"},
                 {"id": str(uuid4()), "type": "separator"},
                 {"id": str(uuid4()), "type": "git-branch", "color": "magenta"},
                 {"id": str(uuid4()), "type": "separator"},
