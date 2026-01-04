@@ -138,6 +138,26 @@ Follow this loop for every task you receive:
 - Wait for results
 - Synthesize and respond
 
+## RALPH Loop: Iterative Refinement Archetype
+
+Use the RALPH loop when work requires repeated critique → improvement cycles with
+explicit stopping criteria. This is a parent-orchestrated pattern that relies
+on fresh subagents each iteration.
+
+**When to use RALPH:**
+- Requirements are still evolving and need an interview phase
+- The task benefits from incremental improvements and checkpoints
+- You need an explicit stop condition (goal met or marginal gains taper)
+- You want to cap effort with a max-iterations budget
+
+**How it works (high level):**
+1) Interview user for goal, delta threshold, max iterations, and constraints
+2) Critique current state
+3) Evaluate delta vs. threshold (stop if satisfied)
+4) Apply improvements and repeat
+
+Use the custom Claude command `/ralph` to run this loop.
+
 ## Divide and Conquer: The Anti-Recursion Rule
 
 **CRITICAL: Subagents must receive SMALLER, MORE SPECIFIC tasks than their parent.**
@@ -248,6 +268,79 @@ def install_claude_md() -> None:
         content = CLAUDE_MD_CONTENT
 
     claude_md_path.write_text(content)
+
+
+RALPH_COMMAND_CONTENT = """<prompt>
+  <params>
+    goal # Primary outcome or acceptance criteria
+    max_iterations # Maximum number of loop iterations
+    delta_threshold # Minimum improvement needed to continue
+  </params>
+
+  <system>
+    You are the root orchestrator for a RALPH loop implemented with Scope.
+    Always interview the user first to lock requirements and stopping criteria.
+    Never start spawning subagents until the variables are confirmed.
+  </system>
+
+  <instructions>
+    # RALPH Loop (Root-Agent Orchestration)
+
+    ## Phase 0: Interview
+    Ask the user for the following variables and confirm them:
+    - Goal / acceptance criteria
+    - max_iterations
+    - delta_threshold (what counts as meaningful improvement)
+    - Quality metric or rubric (if any)
+    - Constraints (time, budget, risk tolerance, allowed changes)
+
+    If anything is ambiguous, ask follow-up questions before proceeding.
+
+    ## Phase 1: Initialize
+    Summarize the variables back to the user and get confirmation.
+    Define the initial state and success criteria in 1-3 sentences.
+
+    ## Phase 2: Iterate
+    For each iteration (i from 1 to max_iterations):
+    1) Spawn a critique subagent to evaluate the current state against the goal.
+    2) Spawn a delta-evaluator subagent to judge whether the improvement is
+       >= delta_threshold and whether the goal is met.
+    3) If goal met or delta < delta_threshold, stop the loop.
+    4) Otherwise, spawn an improvement subagent to apply the critique.
+
+    Always pass the current variables into each subagent task. Each iteration
+    MUST be a new subagent session in Scope.
+
+    ## Phase 3: Exit
+    Report why the loop stopped (goal met, delta too small, or max iterations).
+    Provide a concise summary of changes and current state.
+
+    ## Always
+    - Use `scope spawn` for subagent work.
+    - Use `scope wait` to gather results.
+    - Ask the user to adjust variables if new constraints or goals emerge.
+  </instructions>
+</prompt>
+"""
+
+
+def get_claude_commands_dir() -> Path:
+    """Get the path to Claude Code's custom commands directory."""
+    return Path.home() / ".claude" / "commands"
+
+
+def install_custom_commands() -> None:
+    """Install custom Claude Code commands for scope."""
+    commands_dir = get_claude_commands_dir()
+    commands_dir.mkdir(parents=True, exist_ok=True)
+
+    ralph_path = commands_dir / "ralph.md"
+    if ralph_path.exists():
+        existing = ralph_path.read_text()
+        if "<prompt>" in existing and "RALPH Loop" in existing:
+            return
+
+    ralph_path.write_text(RALPH_COMMAND_CONTENT)
 
 
 def install_tmux_hooks() -> tuple[bool, str | None]:

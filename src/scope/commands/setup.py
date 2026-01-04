@@ -11,6 +11,7 @@ from scope.core.tmux import is_installed as tmux_is_installed
 from scope.hooks.install import (
     install_ccstatusline,
     install_claude_md,
+    install_custom_commands,
     install_hooks,
 )
 
@@ -61,7 +62,12 @@ def setup() -> None:
     install_claude_md()
     click.echo("Documentation installed to ~/.claude/CLAUDE.md")
 
-    # 4. Install ccstatusline with context percentage
+    # 4. Install custom Claude Code commands
+    click.echo("Installing custom Claude Code commands...")
+    install_custom_commands()
+    click.echo("Custom commands installed to ~/.claude/commands")
+
+    # 5. Install ccstatusline with context percentage
     click.echo("Installing ccstatusline status bar...")
     install_ccstatusline()
     click.echo("Status bar configured to show context usage")
