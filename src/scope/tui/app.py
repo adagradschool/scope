@@ -225,8 +225,6 @@ class ScopeApp(App):
             self.notify("Not running inside tmux", severity="error")
             return
 
-        current_pane_id = get_current_pane_id()
-
         # Detach any currently attached pane first
         if self._attached_pane_id:
             self.action_detach()
