@@ -176,8 +176,29 @@ def spawn(
         )
         (session_dir / "contract.md").write_text(contract)
 
-        # Wait for Claude Code to start, then send the contract
-        time.sleep(1)
+        # Wait for Claude Code to signal readiness via SessionStart hook
+        # Skip if SCOPE_SKIP_READY_CHECK is set (used in tests)
+        skip_ready_check = os.environ.get("SCOPE_SKIP_READY_CHECK", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        if not skip_ready_check:
+            ready_file = session_dir / "ready"
+            timeout = 10  # seconds
+            start_time = time.time()
+            while not ready_file.exists():
+                if time.time() - start_time > timeout:
+                    click.echo(
+                        f"Warning: Claude Code did not signal ready within {timeout}s, sending contract anyway",
+                        err=True,
+                    )
+                    break
+                time.sleep(0.1)
+        else:
+            # In test environment, wait a short time for process to start
+            time.sleep(0.5)
+
         # Use full session:window target when not inside tmux
         if in_tmux():
             target = f":{window_name}"

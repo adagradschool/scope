@@ -59,6 +59,9 @@ def cleanup_scope_windows(monkeypatch, worker_id):
     # 'cat' blocks forever waiting for input, keeping the window alive for tests
     monkeypatch.setenv("SCOPE_SPAWN_COMMAND", "cat")
 
+    # Skip ready check in tests since we're not using real Claude Code
+    monkeypatch.setenv("SCOPE_SKIP_READY_CHECK", "1")
+
     # Clean before test - kill the isolated test server if it exists
     subprocess.run(
         ["tmux", "-L", test_socket, "kill-server"],

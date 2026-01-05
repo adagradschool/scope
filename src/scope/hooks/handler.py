@@ -255,6 +255,18 @@ def extract_final_response(transcript_path: str) -> str | None:
 
 
 @main.command()
+def ready() -> None:
+    """Handle SessionStart hook - signal that Claude Code is ready to receive input."""
+    session_dir = get_session_dir()
+    if session_dir is None:
+        return
+
+    # Create ready signal file
+    ready_file = session_dir / "ready"
+    ready_file.touch()
+
+
+@main.command()
 def stop() -> None:
     """Handle Stop hook - mark session as done and capture result."""
     session_dir = get_session_dir()
