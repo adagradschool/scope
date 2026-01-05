@@ -83,32 +83,29 @@ scope setup
 
 **Verify:** Run `scope` - you should see an empty dashboard.
 
-### 3. First Subagent (2 minutes)
-
-From any Claude Code session:
+### 3. First Session (2 minutes)
 
 ```bash
-# Spawn a subagent with fresh context
-id=$(scope spawn "research authentication patterns in the codebase")
-# Output: 0
-
-# Check live progress
+# Open the Scope dashboard
 scope
-
-# Wait for result (blocking)
-scope wait $id
-# Output: (session result printed here)
-# Authentication patterns analysis:
-# - JWT tokens used in auth/jwt.py
-# - Session middleware in middleware/auth.py
-# - OAuth2 integration in auth/oauth.py
 ```
 
+**In the dashboard:**
+1. Press `n` to start a new Claude Code session
+2. Give Claude a multi-step task naturally:
+   - "Research authentication patterns in this codebase and implement JWT"
+   - "Refactor the API to use async/await"
+   - "Add comprehensive tests for the user module"
+
 **What happens:**
-- Scope launches Claude Code in a background tmux session with `SCOPE_SESSION_ID` set
-- Claude executes the task with fresh context (no parent baggage)
-- Result is written to `.scope/sessions/{id}/result`
-- Open the `scope` dashboard to watch it run in real-time
+- Claude analyzes the task and decides if it needs subagents
+- For complex tasks, Claude automatically spawns focused subagents (research, implement, test)
+- Watch the dashboard update in real-time as subagents start, run, and complete
+- Your main session stays lean—just coordination and results
+
+**You don't need to know about `scope spawn` commands.** Just talk to Claude naturally. The dashboard shows what's happening behind the scenes.
+
+> **Advanced:** Want manual control? See the [Orchestration Patterns](#example-orchestration-patterns) section for CLI usage.
 
 ### 4. Update (anytime)
 
