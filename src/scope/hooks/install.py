@@ -293,14 +293,21 @@ RALPH_COMMAND_CONTENT = """<prompt>
     # RALPH Loop (Root-Agent Orchestration)
 
     ## Phase 0: Interview
-    Ask the user for the following variables and confirm them:
+    Gather the following variables through a conversational interview.
+    IMPORTANT: Ask ONE question at a time. Wait for the user's response before
+    asking the next question. This keeps the conversation natural and allows
+    you to gather maximum information through follow-up questions.
+
+    Variables to collect:
     - Goal / acceptance criteria
     - max_iterations
     - delta_threshold (what counts as meaningful improvement)
     - Quality metric or rubric (if any)
     - Constraints (time, budget, risk tolerance, allowed changes)
 
-    If anything is ambiguous, ask follow-up questions before proceeding.
+    If any answer is ambiguous or incomplete, ask clarifying follow-ups before
+    moving to the next variable. Do not proceed to Phase 1 until all variables
+    are confirmed.
 
     ## Phase 1: Initialize
     Summarize the variables back to the user and get confirmation.
@@ -308,14 +315,24 @@ RALPH_COMMAND_CONTENT = """<prompt>
 
     ## Phase 2: Iterate
     For each iteration (i from 1 to max_iterations):
-    1) Spawn a critique subagent to evaluate the current state against the goal.
-    2) Spawn a delta-evaluator subagent to judge whether the improvement is
-       >= delta_threshold and whether the goal is met.
-    3) If goal met or delta < delta_threshold, stop the loop.
-    4) Otherwise, spawn an improvement subagent to apply the critique.
+
+    1) CRITIQUE: Spawn a critique subagent to evaluate the current state against
+       the goal. Wait for the critique results.
+
+    2) EVALUATE STOPPING CRITERION: Pass the critique to a delta-evaluator
+       subagent. The evaluator judges whether:
+       - The critique indicates the goal is already met, OR
+       - The critique is small enough (< delta_threshold) that further
+         iteration would not yield meaningful improvement
+       If either condition is true, STOP the loop. Do not proceed to step 3.
+
+    3) ACT: Only after the evaluator approves continuation, spawn an improvement
+       subagent to apply the critique. The critique from step 1 is the input
+       for this step.
 
     Always pass the current variables into each subagent task. Each iteration
-    MUST be a new subagent session in Scope.
+    MUST be a new subagent session in Scope. Never spawn the improvement
+    subagent without first getting approval from the evaluator.
 
     ## Phase 3: Exit
     Report why the loop stopped (goal met, delta too small, or max iterations).

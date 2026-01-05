@@ -291,11 +291,11 @@ class ScopeApp(App):
                 set_pane_option(pane_id, "@scope_session_id", session_id)
             except TmuxError:
                 pass
-            if current_pane_id:
-                try:
-                    select_pane(current_pane_id)
-                except TmuxError:
-                    pass
+            # Focus the newly created Claude Code pane
+            try:
+                select_pane(pane_id)
+            except TmuxError:
+                pass
         except TmuxError as e:
             self.notify(f"Failed to create session: {e}", severity="error")
 
