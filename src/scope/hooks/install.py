@@ -43,6 +43,12 @@ HOOK_CONFIG = {
             "hooks": [{"type": "command", "command": "scope-hook stop"}],
         }
     ],
+    "SessionStart": [
+        {
+            "matcher": "startup",
+            "hooks": [{"type": "command", "command": "scope-hook ready"}],
+        }
+    ],
 }
 
 
