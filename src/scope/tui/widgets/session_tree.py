@@ -44,9 +44,9 @@ def _build_tree(
     for session in sessions:
         children[session.parent].append(session)
 
-    # Sort children by ID within each parent group
+    # Sort children by ID within each parent group (numeric segment ordering)
     for parent_id in children:
-        children[parent_id].sort(key=lambda s: s.id)
+        children[parent_id].sort(key=lambda s: [int(x) for x in s.id.split(".")])
 
     # DFS traversal starting from root sessions (parent="")
     result: list[tuple[Session, int, bool]] = []
