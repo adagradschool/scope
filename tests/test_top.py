@@ -270,6 +270,56 @@ def test_build_tree_empty():
     assert result == []
 
 
+def test_build_tree_semver_ordering():
+    """Test _build_tree sorts IDs by numeric segments, not lexicographically.
+
+    String sort would produce: 0.1, 0.10, 0.2
+    Correct semver sort produces: 0.1, 0.2, 0.10
+    """
+    parent = Session(
+        id="0",
+        task="Parent",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    child_1 = Session(
+        id="0.1",
+        task="Child 1",
+        parent="0",
+        state="running",
+        tmux_session="scope-0.1",
+        created_at=datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc),
+    )
+    child_2 = Session(
+        id="0.2",
+        task="Child 2",
+        parent="0",
+        state="running",
+        tmux_session="scope-0.2",
+        created_at=datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc),
+    )
+    child_10 = Session(
+        id="0.10",
+        task="Child 10",
+        parent="0",
+        state="running",
+        tmux_session="scope-0.10",
+        created_at=datetime(2024, 1, 1, 15, 0, 0, tzinfo=timezone.utc),
+    )
+
+    # Input in wrong order (as string sort would produce)
+    result = _build_tree([parent, child_10, child_1, child_2], collapsed=set())
+
+    # Should be sorted numerically: 0, 0.1, 0.2, 0.10
+    assert len(result) == 4
+    assert result[0][0].id == "0"
+    assert result[1][0].id == "0.1"
+    assert result[2][0].id == "0.2"
+    assert result[3][0].id == "0.10"
+
+
 def test_build_tree_single_root():
     """Test _build_tree with a single root session."""
     session = Session(
