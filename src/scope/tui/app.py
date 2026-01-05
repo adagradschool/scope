@@ -225,8 +225,6 @@ class ScopeApp(App):
             self.notify("Not running inside tmux", severity="error")
             return
 
-        current_pane_id = get_current_pane_id()
-
         # Detach any currently attached pane first
         if self._attached_pane_id:
             self.action_detach()
@@ -291,11 +289,11 @@ class ScopeApp(App):
                 set_pane_option(pane_id, "@scope_session_id", session_id)
             except TmuxError:
                 pass
-            if current_pane_id:
-                try:
-                    select_pane(current_pane_id)
-                except TmuxError:
-                    pass
+            # Focus the newly created Claude Code pane
+            try:
+                select_pane(pane_id)
+            except TmuxError:
+                pass
         except TmuxError as e:
             self.notify(f"Failed to create session: {e}", severity="error")
 
