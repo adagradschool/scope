@@ -17,7 +17,9 @@ from scope.core.state import (
 @click.command()
 @click.argument("session_id")
 @click.option("--full", is_flag=True, help="Show full trajectory (pretty-printed)")
-@click.option("--json", "output_json", is_flag=True, help="Output full trajectory as raw JSONL")
+@click.option(
+    "--json", "output_json", is_flag=True, help="Output full trajectory as raw JSONL"
+)
 def trajectory(session_id: str, full: bool, output_json: bool) -> None:
     """View conversation trajectory for a session.
 

@@ -135,7 +135,11 @@ class SessionTable(DataTable):
         """Render sessions to the table."""
         # Preserve current cursor selection before clearing rows.
         # Skip if _selected_session_id is already set (e.g., by set_selected_session).
-        if self._selected_session_id is None and self.cursor_row is not None and self.row_count > 0:
+        if (
+            self._selected_session_id is None
+            and self.cursor_row is not None
+            and self.row_count > 0
+        ):
             try:
                 row = self.get_row_at(self.cursor_row)
                 if row is not None:

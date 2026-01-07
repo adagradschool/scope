@@ -21,22 +21,22 @@ def extract_file_references(task: str, cwd: Path) -> list[Path]:
     files: list[Path] = []
 
     # Pattern 1: Explicit file paths (with extensions)
-    path_pattern = r'[\w./\\-]+\.\w{1,4}'
+    path_pattern = r"[\w./\\-]+\.\w{1,4}"
     for match in re.finditer(path_pattern, task):
         candidate = match.group()
         # Skip URLs
-        if '://' in candidate:
+        if "://" in candidate:
             continue
         path = cwd / candidate
         if path.exists() and path.is_file():
             files.append(path)
 
     # Pattern 2: Glob patterns
-    glob_pattern = r'\*+\.?\w*'
+    glob_pattern = r"\*+\.?\w*"
     for match in re.finditer(glob_pattern, task):
         pattern = match.group()
         try:
-            for path in cwd.rglob(pattern.lstrip('*').lstrip('/')):
+            for path in cwd.rglob(pattern.lstrip("*").lstrip("/")):
                 if path.is_file() and path not in files:
                     files.append(path)
         except Exception:
@@ -44,7 +44,7 @@ def extract_file_references(task: str, cwd: Path) -> list[Path]:
 
     # Pattern 3: Common file name references without path
     # e.g., "trajectory.py", "the cli module"
-    name_pattern = r'\b(\w+\.(?:py|ts|js|tsx|jsx|rs|go|java|cpp|c|h))\b'
+    name_pattern = r"\b(\w+\.(?:py|ts|js|tsx|jsx|rs|go|java|cpp|c|h))\b"
     for match in re.finditer(name_pattern, task, re.IGNORECASE):
         name = match.group(1)
         # Search for this file in common locations
@@ -67,10 +67,12 @@ def estimate_tokens(files: list[Path]) -> dict:
         try:
             lines = len(path.read_text().splitlines())
             total_lines += lines
-            file_stats.append({
-                "file": str(path),
-                "lines": lines,
-            })
+            file_stats.append(
+                {
+                    "file": str(path),
+                    "lines": lines,
+                }
+            )
         except Exception:
             pass
 
@@ -107,7 +109,9 @@ def recommend(tokens_with_overhead: int, file_count: int) -> str:
 
 @click.command()
 @click.argument("task")
-@click.option("--files", "-f", multiple=True, help="Explicit files to include in estimate")
+@click.option(
+    "--files", "-f", multiple=True, help="Explicit files to include in estimate"
+)
 @click.option("--verbose", "-v", is_flag=True, help="Show detailed file breakdown")
 def estimate(task: str, files: tuple[str, ...], verbose: bool) -> None:
     """Estimate context cost for a task.
