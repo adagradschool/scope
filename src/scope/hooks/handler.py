@@ -107,6 +107,29 @@ def main() -> None:
     pass
 
 
+@main.command("block-background-scope")
+def block_background_scope() -> None:
+    """Block Bash commands that run scope CLI in background.
+
+    Used as a PreToolUse hook to prevent `scope spawn/wait/poll` from
+    being run with run_in_background=true, which would make them opaque.
+    """
+    data = read_stdin_json()
+    tool_input = data.get("tool_input", {})
+
+    run_in_background = tool_input.get("run_in_background", False)
+    command = tool_input.get("command", "")
+
+    # Only block if both conditions are true
+    if run_in_background and command.strip().startswith("scope"):
+        click.echo(
+            "BLOCKED: scope commands must not run in background. "
+            "Remove run_in_background=true from the Bash call.",
+            err=True,
+        )
+        sys.exit(1)
+
+
 @main.command()
 def activity() -> None:
     """Handle PostToolUse hook - update activity file."""
@@ -254,6 +277,118 @@ def extract_final_response(transcript_path: str) -> str | None:
     return last_assistant_message
 
 
+def build_trajectory_index(transcript_path: str) -> dict | None:
+    """Build an index summarizing the trajectory from a transcript.
+
+    Args:
+        transcript_path: Path to the conversation transcript (.jsonl)
+
+    Returns:
+        Dictionary with trajectory statistics, or None if transcript not found.
+    """
+    path = Path(transcript_path).expanduser()
+    if not path.exists():
+        return None
+
+    tool_calls: list[str] = []
+    turn_count = 0
+    model = None
+    first_timestamp = None
+    last_timestamp = None
+
+    with path.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = orjson.loads(line)
+                entry_type = entry.get("type", "")
+
+                # Track timestamps
+                timestamp = entry.get("timestamp")
+                if timestamp:
+                    if first_timestamp is None:
+                        first_timestamp = timestamp
+                    last_timestamp = timestamp
+
+                # Count turns (user + assistant messages)
+                if entry_type in ("user", "assistant"):
+                    turn_count += 1
+
+                # Extract model from assistant messages
+                if entry_type == "assistant" and model is None:
+                    message = entry.get("message", {})
+                    model = message.get("model")
+
+                # Track tool calls from assistant messages
+                if entry_type == "assistant":
+                    message = entry.get("message", {})
+                    content = message.get("content", [])
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "tool_use":
+                            tool_name = block.get("name", "unknown")
+                            tool_calls.append(tool_name)
+
+            except (orjson.JSONDecodeError, KeyError, TypeError):
+                continue
+
+    # Calculate duration
+    duration_seconds = None
+    if first_timestamp and last_timestamp:
+        try:
+            from datetime import datetime
+
+            # Parse ISO timestamps
+            first_dt = datetime.fromisoformat(first_timestamp.replace("Z", "+00:00"))
+            last_dt = datetime.fromisoformat(last_timestamp.replace("Z", "+00:00"))
+            duration_seconds = int((last_dt - first_dt).total_seconds())
+        except (ValueError, TypeError):
+            pass
+
+    # Build tool summary
+    tool_summary: dict[str, int] = {}
+    for tool in tool_calls:
+        tool_summary[tool] = tool_summary.get(tool, 0) + 1
+
+    return {
+        "turn_count": turn_count,
+        "tool_calls": tool_calls,
+        "tool_summary": tool_summary,
+        "duration_seconds": duration_seconds,
+        "model": model,
+    }
+
+
+def copy_trajectory(transcript_path: str, session_dir: Path) -> bool:
+    """Copy transcript to session directory and build index.
+
+    Args:
+        transcript_path: Path to the source transcript (.jsonl)
+        session_dir: Path to the session directory
+
+    Returns:
+        True if successful, False otherwise.
+    """
+    import shutil
+
+    path = Path(transcript_path).expanduser()
+    if not path.exists():
+        return False
+
+    # Copy full transcript
+    trajectory_file = session_dir / "trajectory.jsonl"
+    shutil.copy2(path, trajectory_file)
+
+    # Build and save index
+    index = build_trajectory_index(transcript_path)
+    if index:
+        index_file = session_dir / "trajectory_index.json"
+        index_file.write_bytes(orjson.dumps(index, option=orjson.OPT_INDENT_2))
+
+    return True
+
+
 @main.command()
 def ready() -> None:
     """Handle SessionStart hook - signal that Claude Code is ready to receive input."""
@@ -268,12 +403,12 @@ def ready() -> None:
 
 @main.command()
 def stop() -> None:
-    """Handle Stop hook - mark session as done and capture result."""
+    """Handle Stop hook - mark session as done, capture result, and store trajectory."""
     session_dir = get_session_dir()
     if session_dir is None:
         return
 
-    # Extract final response from transcript
+    # Extract final response from transcript and copy full trajectory
     data = read_stdin_json()
     transcript_path = data.get("transcript_path", "")
     if transcript_path:
@@ -281,6 +416,9 @@ def stop() -> None:
         if final_response:
             result_file = session_dir / "result"
             result_file.write_text(final_response)
+
+        # Copy full trajectory and build index
+        copy_trajectory(transcript_path, session_dir)
 
     # Update state to done
     state_file = session_dir / "state"

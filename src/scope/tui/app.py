@@ -33,6 +33,7 @@ from scope.core.tmux import (
     detach_client,
     pane_target_for_window,
     rename_current_window,
+    send_keys,
     set_current_window_option,
     set_pane_option,
     select_pane,
@@ -292,6 +293,12 @@ class ScopeApp(App):
             # Focus the newly created Claude Code pane
             try:
                 select_pane(pane_id)
+            except TmuxError:
+                pass
+
+            # Prefill /scope command (without pressing Enter)
+            try:
+                send_keys(pane_id, "/scope ", submit=False)
             except TmuxError:
                 pass
         except TmuxError as e:

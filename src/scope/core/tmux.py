@@ -6,6 +6,7 @@ This allows attaching/detaching without destroying sessions.
 """
 
 import os
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -30,6 +31,23 @@ class TmuxError(Exception):
     """Raised when a tmux command fails."""
 
     pass
+
+
+def _build_command_args(command: str, env: dict[str, str] | None) -> list[str]:
+    """Build argv for tmux command execution without relying on shell parsing."""
+    try:
+        args = shlex.split(command)
+    except ValueError as exc:
+        raise TmuxError(f"Failed to parse command: {exc}") from exc
+
+    if not args:
+        raise TmuxError("Command is empty")
+
+    if env:
+        env_args = [f"{key}={value}" for key, value in env.items()]
+        return ["env", *env_args, *args]
+
+    return args
 
 
 def get_scope_session() -> str:
@@ -225,13 +243,6 @@ def create_session(
     """
     cwd = cwd or Path.cwd()
 
-    # Build command with environment variables
-    if env:
-        env_prefix = " ".join(f"{k}={v}" for k, v in env.items())
-        full_command = f"{env_prefix} {command}"
-    else:
-        full_command = command
-
     # tmux new-session -d -s {name} -c {cwd} "{command}"
     cmd = _tmux_cmd(
         [
@@ -241,9 +252,9 @@ def create_session(
             name,  # Session name
             "-c",
             str(cwd),  # Working directory
-            full_command,
         ]
     )
+    cmd.extend(_build_command_args(command, env))
 
     result = subprocess.run(
         cmd,
@@ -493,22 +504,15 @@ def split_window(
     """
     cwd = cwd or Path.cwd()
 
-    # Build command with environment variables (same pattern as create_session)
-    if env:
-        env_prefix = " ".join(f"{k}={v}" for k, v in env.items())
-        full_command = f"{env_prefix} {command}"
-    else:
-        full_command = command
-
     cmd = _tmux_cmd(
         [
             "split-window",
             "-h",  # Horizontal split
             "-c",
             str(cwd),  # Working directory
-            full_command,
         ]
     )
+    cmd.extend(_build_command_args(command, env))
 
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
@@ -537,13 +541,6 @@ def create_window(
     """
     cwd = cwd or Path.cwd()
 
-    # Build command with environment variables
-    if env:
-        env_prefix = " ".join(f"{k}={v}" for k, v in env.items())
-        full_command = f"{env_prefix} {command}"
-    else:
-        full_command = command
-
     # If not in tmux, use the scope session
     current = get_current_session()
     if current is None:
@@ -562,9 +559,9 @@ def create_window(
             name,  # Window name
             "-c",
             str(cwd),
-            full_command,
         ]
     )
+    cmd.extend(_build_command_args(command, env))
 
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:

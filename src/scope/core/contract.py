@@ -20,6 +20,9 @@ def generate_contract(prompt: str, depends_on: list[str] | None = None) -> str:
     """
     sections = []
 
+    # Invoke /scope command to load orchestration rules
+    sections.append("/scope")
+
     # Add dependencies section if there are dependencies
     if depends_on:
         deps_str = " ".join(depends_on)
@@ -31,6 +34,6 @@ def generate_contract(prompt: str, depends_on: list[str] | None = None) -> str:
         )
 
     # Add task section
-    sections.append(f"# Task\n\n{prompt}")
+    sections.append(f"# Task\n{prompt}")
 
     return "\n\n".join(sections)

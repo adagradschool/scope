@@ -4,6 +4,7 @@ Creates a new scope session with Claude Code running in a tmux window.
 """
 
 import os
+import shlex
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -149,17 +150,22 @@ def spawn(
         # Allow overriding command for tests (e.g., "sleep infinity" when claude isn't installed)
         command = os.environ.get("SCOPE_SPAWN_COMMAND", "claude")
         if command == "claude":
+            if plan:
+                command += " --permission-mode plan"
+            if model:
+                command += f" --model {shlex.quote(model)}"
             if dangerously_skip_permissions:
                 command += " --dangerously-skip-permissions"
-            if plan:
-                command += " --plan"
-            if model:
-                command += f" --model {model}"
 
         # Build environment for spawned session
         env = {"SCOPE_SESSION_ID": session_id}
         if dangerously_skip_permissions:
             env["SCOPE_DANGEROUSLY_SKIP_PERMISSIONS"] = "1"
+        if path := os.environ.get("PATH"):
+            env["PATH"] = path
+        for key, value in os.environ.items():
+            if key.startswith(("CLAUDE", "ANTHROPIC")):
+                env[key] = value
 
         create_window(
             name=window_name,

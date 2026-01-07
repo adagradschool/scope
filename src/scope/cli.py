@@ -12,9 +12,11 @@ import os
 import click
 
 from scope.commands.abort import abort
+from scope.commands.estimate import estimate
 from scope.commands.poll import poll
 from scope.commands.setup import setup
 from scope.commands.spawn import spawn
+from scope.commands.trajectory import trajectory
 from scope.commands.update import update
 from scope.commands.wait import wait
 from scope.core.tmux import (
@@ -121,5 +123,7 @@ main.add_command(spawn)
 main.add_command(poll)
 main.add_command(abort)
 main.add_command(setup)
+main.add_command(trajectory)
 main.add_command(update)
 main.add_command(wait)
+main.add_command(estimate)

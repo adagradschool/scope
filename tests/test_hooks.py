@@ -590,3 +590,72 @@ def test_summarize_task_rejects_long_summary(monkeypatch):
 
     result = summarize_task("Short prompt")
     assert result == "Short prompt"  # Falls back to original
+
+
+# --- Block background scope tests ---
+
+
+def test_block_background_scope_allows_normal_scope(runner):
+    """Test block-background-scope allows scope commands without run_in_background."""
+    input_json = orjson.dumps({
+        "tool_input": {
+            "command": "scope spawn 'do something'",
+            "run_in_background": False,
+        }
+    }).decode()
+
+    result = runner.invoke(main, ["block-background-scope"], input=input_json)
+    assert result.exit_code == 0
+
+
+def test_block_background_scope_blocks_background_scope(runner):
+    """Test block-background-scope blocks scope commands with run_in_background=true."""
+    input_json = orjson.dumps({
+        "tool_input": {
+            "command": "scope spawn 'do something'",
+            "run_in_background": True,
+        }
+    }).decode()
+
+    result = runner.invoke(main, ["block-background-scope"], input=input_json)
+    assert result.exit_code == 1
+    assert "BLOCKED" in result.output
+
+
+def test_block_background_scope_allows_background_non_scope(runner):
+    """Test block-background-scope allows non-scope commands with run_in_background."""
+    input_json = orjson.dumps({
+        "tool_input": {
+            "command": "npm run build",
+            "run_in_background": True,
+        }
+    }).decode()
+
+    result = runner.invoke(main, ["block-background-scope"], input=input_json)
+    assert result.exit_code == 0
+
+
+def test_block_background_scope_allows_normal_non_scope(runner):
+    """Test block-background-scope allows non-scope commands without run_in_background."""
+    input_json = orjson.dumps({
+        "tool_input": {
+            "command": "git status",
+        }
+    }).decode()
+
+    result = runner.invoke(main, ["block-background-scope"], input=input_json)
+    assert result.exit_code == 0
+
+
+def test_block_background_scope_handles_whitespace(runner):
+    """Test block-background-scope handles commands with leading whitespace."""
+    input_json = orjson.dumps({
+        "tool_input": {
+            "command": "  scope wait abc123",
+            "run_in_background": True,
+        }
+    }).decode()
+
+    result = runner.invoke(main, ["block-background-scope"], input=input_json)
+    assert result.exit_code == 1
+    assert "BLOCKED" in result.output

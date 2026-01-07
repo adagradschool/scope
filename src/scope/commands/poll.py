@@ -6,12 +6,19 @@ Returns session status as JSON.
 import click
 import orjson
 
-from scope.core.state import ensure_scope_dir, load_session, resolve_id
+from scope.core.state import (
+    ensure_scope_dir,
+    has_trajectory,
+    load_session,
+    load_trajectory_index,
+    resolve_id,
+)
 
 
 @click.command()
 @click.argument("session_ids", nargs=-1, required=True)
-def poll(session_ids: tuple[str, ...]) -> None:
+@click.option("--trajectory", is_flag=True, help="Include trajectory index in output")
+def poll(session_ids: tuple[str, ...], trajectory: bool) -> None:
     """Poll session status(es).
 
     Returns JSON with current status and activity.
@@ -60,6 +67,12 @@ def poll(session_ids: tuple[str, ...]) -> None:
         result_file = session_dir / "result"
         if result_file.exists():
             result["result"] = result_file.read_text()
+
+        # Include trajectory index if requested and available
+        if trajectory and has_trajectory(resolved_id):
+            traj_index = load_trajectory_index(resolved_id)
+            if traj_index is not None:
+                result["trajectory_index"] = traj_index
 
         click.echo(orjson.dumps(result).decode())
 

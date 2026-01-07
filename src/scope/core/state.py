@@ -370,3 +370,74 @@ def get_failed_reason(session_id: str) -> str | None:
     if failed_reason_file.exists():
         return failed_reason_file.read_text()
     return None
+
+
+def load_trajectory(session_id: str) -> list[dict] | None:
+    """Load the full trajectory for a session.
+
+    Args:
+        session_id: The session ID to load trajectory for.
+
+    Returns:
+        List of trajectory entries (parsed JSONL), or None if not found.
+    """
+    import orjson
+
+    scope_dir = _get_scope_dir()
+    session_dir = _get_session_dir(scope_dir, session_id)
+
+    trajectory_file = session_dir / "trajectory.jsonl"
+    if not trajectory_file.exists():
+        return None
+
+    entries = []
+    with trajectory_file.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(orjson.loads(line))
+            except (orjson.JSONDecodeError, ValueError):
+                continue
+
+    return entries
+
+
+def load_trajectory_index(session_id: str) -> dict | None:
+    """Load the trajectory index for a session.
+
+    Args:
+        session_id: The session ID to load index for.
+
+    Returns:
+        Dictionary with trajectory statistics, or None if not found.
+    """
+    import orjson
+
+    scope_dir = _get_scope_dir()
+    session_dir = _get_session_dir(scope_dir, session_id)
+
+    index_file = session_dir / "trajectory_index.json"
+    if not index_file.exists():
+        return None
+
+    try:
+        return orjson.loads(index_file.read_bytes())
+    except (orjson.JSONDecodeError, ValueError):
+        return None
+
+
+def has_trajectory(session_id: str) -> bool:
+    """Check if a session has a stored trajectory.
+
+    Args:
+        session_id: The session ID to check.
+
+    Returns:
+        True if trajectory exists, False otherwise.
+    """
+    scope_dir = _get_scope_dir()
+    session_dir = _get_session_dir(scope_dir, session_id)
+
+    return (session_dir / "trajectory.jsonl").exists()

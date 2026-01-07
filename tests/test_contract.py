@@ -7,6 +7,7 @@ def test_generate_contract_simple():
     """Test contract generation with a simple prompt."""
     contract = generate_contract(prompt="Write tests for auth module")
 
+    assert contract.startswith("/scope")
     assert "# Task" in contract
     assert "Write tests for auth module" in contract
 
@@ -32,9 +33,11 @@ def test_generate_contract_with_dependencies():
         depends_on=["0.0", "0.1"],
     )
 
-    # Dependencies section should come before Task
+    # /scope should come first, then Dependencies, then Task
+    assert contract.startswith("/scope")
     assert "# Dependencies" in contract
     assert "# Task" in contract
+    assert contract.index("/scope") < contract.index("# Dependencies")
     assert contract.index("# Dependencies") < contract.index("# Task")
 
     # Should include wait command with all dependencies
