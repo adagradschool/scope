@@ -21,7 +21,7 @@ def test_poll_help(runner):
     """Test poll --help shows usage."""
     result = runner.invoke(main, ["poll", "--help"])
     assert result.exit_code == 0
-    assert "Poll a session's status" in result.output
+    assert "Poll session status" in result.output
 
 
 def test_poll_no_args(runner):
