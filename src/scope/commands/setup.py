@@ -8,11 +8,7 @@ import platform
 import click
 
 from scope.core.tmux import is_installed as tmux_is_installed
-from scope.hooks.install import (
-    install_ccstatusline,
-    install_custom_commands,
-    install_hooks,
-)
+from scope.hooks.install import ensure_setup
 
 
 @click.command()
@@ -35,7 +31,7 @@ def setup() -> None:
 
         scope setup
     """
-    # 1. Check tmux
+    # Check tmux
     if not tmux_is_installed():
         click.echo("tmux is not installed.", err=True)
         system = platform.system()
@@ -51,20 +47,9 @@ def setup() -> None:
 
     click.echo("tmux found.")
 
-    # 2. Install hooks
-    click.echo("Installing scope hooks...")
-    install_hooks()
-    click.echo("Hooks installed to ~/.claude/settings.json")
-
-    # 3. Install custom Claude Code commands
-    click.echo("Installing custom Claude Code commands...")
-    install_custom_commands()
-    click.echo("Custom commands installed to ~/.claude/commands")
-
-    # 4. Install ccstatusline with context percentage
-    click.echo("Installing ccstatusline status bar...")
-    install_ccstatusline()
-    click.echo("Status bar configured to show context usage")
+    # Run full setup with force=True to reinstall all components
+    click.echo("Installing scope components...")
+    ensure_setup(quiet=False, force=True)
 
     click.echo()
     click.echo("Scope is now integrated with Claude Code.")

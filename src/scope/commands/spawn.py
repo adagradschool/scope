@@ -100,7 +100,10 @@ def spawn(
         existing = load_session_by_alias(alias)
         if existing is not None:
             click.echo(
-                f"Error: alias '{alias}' already exists (session {existing.id})",
+                f"Error: alias '{alias}' is already used by session {existing.id}\n"
+                f"  Cause: Session aliases must be unique across all sessions.\n"
+                f"  Fix: Choose a different alias:\n"
+                f'    scope spawn --id {alias}-2 "your prompt here"',
                 err=True,
             )
             raise SystemExit(1)
@@ -114,7 +117,14 @@ def spawn(
                 continue
             resolved = resolve_id(dep_ref)
             if resolved is None:
-                click.echo(f"Error: dependency '{dep_ref}' not found", err=True)
+                click.echo(
+                    f"Error: dependency '{dep_ref}' not found\n"
+                    f"  Cause: '{dep_ref}' is not a valid session ID or alias.\n"
+                    f"  Fix: List available sessions and use a valid ID or alias:\n"
+                    f"    scope list\n"
+                    f'    scope spawn --after <session-id> "your prompt here"',
+                    err=True,
+                )
                 raise SystemExit(1)
             depends_on.append(resolved)
 
@@ -126,7 +136,17 @@ def spawn(
 
     # Check for cycles before creating the session
     if depends_on and detect_cycle(session_id, depends_on):
-        click.echo("Error: dependency would create a cycle", err=True)
+        dep_list = ", ".join(depends_on)
+        click.echo(
+            f"Error: adding dependencies [{dep_list}] would create a circular dependency\n"
+            f"  Cause: One of these sessions (or their dependencies) already depends on\n"
+            f"  work that would be produced by this new session.\n"
+            f"  Fix: Remove the conflicting dependency from --after, or spawn this\n"
+            f"  session without dependencies and coordinate manually:\n"
+            f"    scope list                              # View the dependency graph\n"
+            f'    scope spawn "your prompt here"         # Spawn without --after',
+            err=True,
+        )
         raise SystemExit(1)
 
     # Create session object - task will be inferred by hooks
@@ -213,7 +233,12 @@ def spawn(
             while not ready_file.exists():
                 if time.time() - start_time > timeout:
                     click.echo(
-                        f"Warning: Claude Code did not signal ready within {timeout}s, sending contract anyway",
+                        f"Warning: Claude Code did not signal ready within {timeout}s\n"
+                        f"  Sending prompt anyway, but the session may not receive it correctly.\n"
+                        f"  Possible causes and fixes:\n"
+                        f"    - Claude Code slow to start → Wait and retry\n"
+                        f"    - SessionStart hook not installed → Run: scope setup\n"
+                        f"    - Claude Code crashed → Check window: tmux select-window -t {get_scope_session()}:{window_name}",
                         err=True,
                     )
                     break
@@ -230,7 +255,40 @@ def spawn(
         send_keys(target, contract)
 
     except TmuxError as e:
-        click.echo(f"Error: {e}", err=True)
+        error_msg = str(e)
+        click.echo(f"Error: tmux operation failed: {error_msg}", err=True)
+
+        # Provide actionable guidance based on the error
+        if "Failed to create" in error_msg:
+            if "session" in error_msg.lower():
+                click.echo(
+                    "  Cause: The tmux server is not running or is inaccessible.\n"
+                    "  Fix: Start tmux and verify it works:\n"
+                    "    tmux new-session -d -s test && tmux kill-session -t test",
+                    err=True,
+                )
+            else:
+                click.echo(
+                    "  Cause: Could not create a tmux window for this session.\n"
+                    "  Fix: Verify tmux is running:\n"
+                    "    tmux list-sessions",
+                    err=True,
+                )
+        elif "send" in error_msg.lower():
+            click.echo(
+                "  Cause: The tmux window may have closed unexpectedly.\n"
+                "  Fix: Check if Claude Code is installed and working:\n"
+                "    claude --version",
+                err=True,
+            )
+        else:
+            click.echo(
+                "  Cause: tmux may not be installed or is not running.\n"
+                "  Fix: Install tmux:\n"
+                "    brew install tmux   # macOS\n"
+                "    apt install tmux    # Linux",
+                err=True,
+            )
         raise SystemExit(1)
 
     # Output session ID

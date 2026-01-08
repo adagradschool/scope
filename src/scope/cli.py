@@ -12,11 +12,11 @@ import os
 import click
 
 from scope.commands.abort import abort
-from scope.commands.estimate import estimate
 from scope.commands.poll import poll
-from scope.commands.setup import setup
+from scope.commands.setup import setup as setup_cmd
 from scope.commands.spawn import spawn
 from scope.commands.trajectory import trajectory
+from scope.commands.uninstall import uninstall
 from scope.commands.update import update
 from scope.commands.wait import wait
 from scope.core.tmux import (
@@ -30,6 +30,7 @@ from scope.core.tmux import (
     kill_window_in_session,
     select_window_in_session,
 )
+from scope.hooks.install import ensure_setup
 
 
 @click.group(invoke_without_command=True)
@@ -52,6 +53,9 @@ def main(
 
     Running 'scope' without a subcommand launches the TUI.
     """
+    # Ensure setup is current (idempotent, runs silently)
+    ensure_setup()
+
     # Store in context for subcommands
     ctx.ensure_object(dict)
     ctx.obj["dangerously_skip_permissions"] = dangerously_skip_permissions
@@ -122,8 +126,8 @@ def main(
 main.add_command(spawn)
 main.add_command(poll)
 main.add_command(abort)
-main.add_command(setup)
+main.add_command(setup_cmd, name="setup")
 main.add_command(trajectory)
+main.add_command(uninstall)
 main.add_command(update)
 main.add_command(wait)
-main.add_command(estimate)

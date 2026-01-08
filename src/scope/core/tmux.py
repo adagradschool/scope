@@ -584,33 +584,140 @@ def select_window(name: str) -> None:
         raise TmuxError(f"Failed to select window: {result.stderr}")
 
 
-def send_keys(target: str, keys: str, submit: bool = True) -> None:
+def _get_tmux_lock_path(target: str | None = None) -> Path:
+    """Get the path to the tmux operations lock file.
+
+    Args:
+        target: Optional target for per-target locking. If None, uses global lock.
+
+    Returns:
+        Path to the lock file.
+    """
+    from scope.core.state import ensure_scope_dir
+
+    scope_dir = ensure_scope_dir()
+    if target:
+        # Per-target lock allows parallel operations on different targets
+        # Sanitize target name for filesystem (replace special chars)
+        safe_target = target.replace(":", "_").replace("/", "_").replace(".", "_")
+        return scope_dir / f".tmux-{safe_target}.lock"
+    return scope_dir / ".tmux.lock"
+
+
+def _capture_pane(target: str, lines: int = 50) -> tuple[str, bool]:
+    """Capture the last N lines from a tmux pane.
+
+    Args:
+        target: The tmux target pane.
+        lines: Number of lines to capture from the end.
+
+    Returns:
+        Tuple of (captured content, success). If capture fails, returns ("", False).
+    """
+    result = subprocess.run(
+        _tmux_cmd(["capture-pane", "-t", target, "-p", "-S", f"-{lines}"]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return result.stdout, True
+    return "", False
+
+
+def send_keys(
+    target: str,
+    keys: str,
+    submit: bool = True,
+    retries: int = 3,
+    verify: bool = True,
+) -> None:
     """Send keys to a tmux target (window or session).
+
+    Uses per-target file-based locking to prevent race conditions when multiple
+    processes send keys concurrently, while allowing parallel operations on
+    different targets. Includes retry logic and optional verification.
 
     Args:
         target: The tmux target to send keys to (e.g., ":w0" for window, "scope-0" for session).
         keys: The text to send.
         submit: Whether to send C-m (Enter) after the keys to submit. Defaults to True.
+        retries: Number of retry attempts on failure. Defaults to 3.
+        verify: Whether to verify key delivery by checking pane content. Defaults to True.
 
     Raises:
-        TmuxError: If tmux command fails.
+        TmuxError: If tmux command fails after all retries.
     """
+    import fcntl
+    import sys
     import time
 
-    # Send message text (no -l flag for raw send)
-    cmd = _tmux_cmd(["send-keys", "-t", target, keys])
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise TmuxError(f"Failed to send keys: {result.stderr}")
+    # Ensure at least one attempt
+    retries = max(1, retries)
 
-    if submit:
-        # Wait before sending Enter
-        time.sleep(1)
-        # C-m (Ctrl+M) is carriage return - submits in Claude Code
-        result = subprocess.run(
-            _tmux_cmd(["send-keys", "-t", target, "C-m"]),
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            raise TmuxError(f"Failed to send C-m: {result.stderr}")
+    lock_path = _get_tmux_lock_path(target)
+    last_error: str | None = None
+
+    for attempt in range(retries):
+        try:
+            # Acquire exclusive lock for this target to serialize operations
+            # Using "a" mode to avoid truncating (slightly more efficient)
+            with open(lock_path, "a") as lock_file:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                # Note: lock is auto-released when file is closed (context manager exit)
+
+                # Capture content before sending for verification
+                content_before = ""
+                capture_ok = True
+                if verify and keys:
+                    content_before, capture_ok = _capture_pane(target)
+
+                # Use -l flag to send keys literally (prevents special char interpretation)
+                cmd = _tmux_cmd(["send-keys", "-t", target, "-l", keys])
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode != 0:
+                    last_error = f"Failed to send keys to {target}: {result.stderr}"
+                    raise TmuxError(last_error)
+
+                if submit:
+                    # Small delay to let keys be processed before Enter
+                    time.sleep(0.05)
+                    # C-m (Ctrl+M) is carriage return - submits in Claude Code
+                    result = subprocess.run(
+                        _tmux_cmd(["send-keys", "-t", target, "C-m"]),
+                        capture_output=True,
+                        text=True,
+                    )
+                    if result.returncode != 0:
+                        last_error = (
+                            f"Failed to send Enter to {target}: {result.stderr}"
+                        )
+                        raise TmuxError(last_error)
+
+                # Verify keys were received by checking pane content changed
+                # Only verify if we successfully captured before AND have non-empty keys
+                if verify and keys and capture_ok:
+                    time.sleep(0.15)  # Allow time for keys to appear
+                    content_after, after_ok = _capture_pane(target)
+                    # Only fail verification if capture succeeded both times
+                    # and content is identical (nothing changed)
+                    if after_ok and content_after == content_before:
+                        last_error = f"Keys may not have been received by {target}"
+                        raise TmuxError(last_error)
+
+                # Success - return without raising
+                return
+
+        except TmuxError:
+            if attempt < retries - 1:
+                # Exponential backoff: 0.25s, 0.5s, 1s...
+                backoff = 0.25 * (2**attempt)
+                print(
+                    f"[scope] send_keys retry {attempt + 1}/{retries} for {target}, "
+                    f"waiting {backoff:.2f}s: {last_error}",
+                    file=sys.stderr,
+                )
+                time.sleep(backoff)
+            else:
+                raise TmuxError(
+                    f"Failed to send keys after {retries} attempts: {last_error}"
+                )

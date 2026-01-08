@@ -296,6 +296,13 @@ def build_trajectory_index(transcript_path: str) -> dict | None:
     first_timestamp = None
     last_timestamp = None
 
+    # Token usage tracking
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_cache_creation_tokens = 0
+    total_cache_read_tokens = 0
+    final_context_tokens = 0  # Context window size at end of session
+
     with path.open() as f:
         for line in f:
             line = line.strip()
@@ -321,7 +328,7 @@ def build_trajectory_index(transcript_path: str) -> dict | None:
                     message = entry.get("message", {})
                     model = message.get("model")
 
-                # Track tool calls from assistant messages
+                # Track tool calls and token usage from assistant messages
                 if entry_type == "assistant":
                     message = entry.get("message", {})
                     content = message.get("content", [])
@@ -329,6 +336,22 @@ def build_trajectory_index(transcript_path: str) -> dict | None:
                         if isinstance(block, dict) and block.get("type") == "tool_use":
                             tool_name = block.get("name", "unknown")
                             tool_calls.append(tool_name)
+
+                    # Track token usage
+                    usage = message.get("usage", {})
+                    if usage:
+                        total_input_tokens += usage.get("input_tokens", 0)
+                        total_output_tokens += usage.get("output_tokens", 0)
+                        total_cache_creation_tokens += usage.get(
+                            "cache_creation_input_tokens", 0
+                        )
+                        total_cache_read_tokens += usage.get(
+                            "cache_read_input_tokens", 0
+                        )
+                        # Track final context size (input + cache read = full context)
+                        final_context_tokens = usage.get("input_tokens", 0) + usage.get(
+                            "cache_read_input_tokens", 0
+                        )
 
             except (orjson.JSONDecodeError, KeyError, TypeError):
                 continue
@@ -351,12 +374,22 @@ def build_trajectory_index(transcript_path: str) -> dict | None:
     for tool in tool_calls:
         tool_summary[tool] = tool_summary.get(tool, 0) + 1
 
+    # Build usage summary
+    usage = {
+        "input_tokens": total_input_tokens,
+        "output_tokens": total_output_tokens,
+        "cache_creation_tokens": total_cache_creation_tokens,
+        "cache_read_tokens": total_cache_read_tokens,
+    }
+
     return {
         "turn_count": turn_count,
         "tool_calls": tool_calls,
         "tool_summary": tool_summary,
         "duration_seconds": duration_seconds,
         "model": model,
+        "usage": usage,
+        "context_used": final_context_tokens,
     }
 
 
@@ -399,6 +432,164 @@ def ready() -> None:
     # Create ready signal file
     ready_file = session_dir / "ready"
     ready_file.touch()
+
+
+def get_latest_context_usage(transcript_path: str) -> dict | None:
+    """Extract the latest context usage from the last assistant message.
+
+    Args:
+        transcript_path: Path to the conversation transcript (.jsonl)
+
+    Returns:
+        Dictionary with context usage info, or None if not found.
+    """
+    path = Path(transcript_path).expanduser()
+    if not path.exists():
+        return None
+
+    last_usage = None
+
+    with path.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = orjson.loads(line)
+                if entry.get("type") == "assistant":
+                    message = entry.get("message", {})
+                    usage = message.get("usage", {})
+                    if usage:
+                        last_usage = usage
+            except (orjson.JSONDecodeError, KeyError, TypeError):
+                continue
+
+    if not last_usage:
+        return None
+
+    # Calculate total context (input + cache read)
+    input_tokens = last_usage.get("input_tokens", 0)
+    cache_read = last_usage.get("cache_read_input_tokens", 0)
+    cache_creation = last_usage.get("cache_creation_input_tokens", 0)
+    output_tokens = last_usage.get("output_tokens", 0)
+    total_context = input_tokens + cache_read + cache_creation
+
+    return {
+        "context_tokens": total_context,
+        "input_tokens": input_tokens,
+        "cache_read_tokens": cache_read,
+        "cache_creation_tokens": cache_creation,
+        "output_tokens": output_tokens,
+    }
+
+
+def find_current_transcript() -> Path | None:
+    """Find the most recently modified transcript for the current project.
+
+    Returns the path to the most recent .jsonl file in the project's Claude logs.
+    """
+    cwd = Path.cwd()
+
+    # Build the project key path (Claude uses path with - replacing /)
+    project_key = str(cwd).replace("/", "-")
+    if project_key.startswith("-"):
+        project_key = project_key[1:]
+
+    projects_dir = Path.home() / ".claude" / "projects" / f"-{project_key}"
+
+    if not projects_dir.exists():
+        return None
+
+    # Find the most recently modified .jsonl file (excluding agent-* files)
+    jsonl_files = [
+        f for f in projects_dir.glob("*.jsonl") if not f.name.startswith("agent-")
+    ]
+
+    if not jsonl_files:
+        return None
+
+    # Sort by modification time, newest first
+    jsonl_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+    return jsonl_files[0]
+
+
+@main.command()
+def context() -> None:
+    """Report current context usage to stderr (visible to Claude).
+
+    This hook reads the transcript and outputs context usage info to stderr,
+    which Claude Code surfaces back to the assistant.
+    """
+    data = read_stdin_json()
+    transcript_path = data.get("transcript_path", "")
+
+    if not transcript_path:
+        return
+
+    usage = get_latest_context_usage(transcript_path)
+    if not usage:
+        return
+
+    # Format context as percentage of 200k limit
+    context_tokens = usage["context_tokens"]
+    context_pct = (context_tokens / 200_000) * 100
+
+    # Output to stderr - this is surfaced to Claude
+    click.echo(
+        f"[context: {context_tokens:,} tokens ({context_pct:.1f}% of 200k)]",
+        err=True,
+    )
+
+
+# Context threshold for forcing spawn (50k tokens)
+CONTEXT_SPAWN_THRESHOLD = 50_000
+
+
+@main.command("context-gate")
+def context_gate() -> None:
+    """PreToolUse hook to force spawning when context exceeds threshold.
+
+    Blocks most tools when context > 50k tokens, forcing the agent to
+    spawn subtasks instead. Only allows Bash for `scope` commands.
+    """
+    data = read_stdin_json()
+    tool_name = data.get("tool_name", "")
+    tool_input = data.get("tool_input", {})
+
+    # Always allow scope commands (spawn, wait, poll)
+    if tool_name == "Bash":
+        command = tool_input.get("command", "").strip()
+        if command.startswith("scope "):
+            return
+
+    # Block these tools when over threshold
+    gated_tools = {"Edit", "Write", "Bash", "NotebookEdit", "Read", "Grep", "Glob"}
+    if tool_name not in gated_tools:
+        return
+
+    # Find current transcript
+    transcript = find_current_transcript()
+    if not transcript:
+        return  # Can't determine context, allow action
+
+    usage = get_latest_context_usage(str(transcript))
+    if not usage:
+        return  # No usage data yet, allow action
+
+    context_tokens = usage["context_tokens"]
+    if context_tokens <= CONTEXT_SPAWN_THRESHOLD:
+        return  # Under threshold, allow action
+
+    # Over threshold - block action tools
+    context_pct = (context_tokens / 200_000) * 100
+    click.echo(
+        f"BLOCKED: Context ({context_tokens:,} tokens, {context_pct:.1f}%) exceeds 50k threshold.\n"
+        f"You must spawn subagents to continue. Choose one:\n"
+        f'  1. HANDOFF: scope spawn "Continue: [current status + what remains]"\n'
+        f"  2. SPLIT: spawn multiple focused subtasks for remaining work",
+        err=True,
+    )
+    sys.exit(2)  # Exit code 2 = blocking error in Claude Code
 
 
 @main.command()
