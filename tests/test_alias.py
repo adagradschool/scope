@@ -234,7 +234,7 @@ def test_spawn_duplicate_alias_rejected(runner, mock_scope_base, cleanup_scope_w
     # Second spawn with same alias should fail
     result2 = runner.invoke(main, ["spawn", "--id", "foo", "Second task"])
     assert result2.exit_code == 1
-    assert "alias 'foo' already exists" in result2.output
+    assert "alias 'foo' is already used by session" in result2.output
 
 
 # --- CLI tests for poll with alias ---

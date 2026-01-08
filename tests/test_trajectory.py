@@ -43,6 +43,12 @@ def sample_transcript_jsonl(tmp_path):
                         "input": {"file_path": "/src/auth.py"},
                     },
                 ],
+                "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                    "cache_creation_input_tokens": 1000,
+                    "cache_read_input_tokens": 500,
+                },
             },
         },
         {
@@ -70,6 +76,12 @@ def sample_transcript_jsonl(tmp_path):
                         "input": {"file_path": "/src/auth.py"},
                     },
                 ],
+                "usage": {
+                    "input_tokens": 200,
+                    "output_tokens": 75,
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": 1500,
+                },
             },
         },
         {
@@ -77,6 +89,12 @@ def sample_transcript_jsonl(tmp_path):
             "timestamp": "2024-01-15T10:00:45Z",
             "message": {
                 "content": [{"type": "text", "text": "The bug is now fixed!"}],
+                "usage": {
+                    "input_tokens": 50,
+                    "output_tokens": 25,
+                    "cache_creation_input_tokens": 500,
+                    "cache_read_input_tokens": 2000,
+                },
             },
         },
     ]
@@ -176,6 +194,16 @@ def test_build_trajectory_index_basic(sample_transcript_jsonl):
     assert index["tool_summary"] == {"Read": 2, "Edit": 1}
     assert index["duration_seconds"] == 45  # 10:00:00 to 10:00:45
 
+    # Verify usage tracking (sum of all assistant messages)
+    usage = index["usage"]
+    assert usage["input_tokens"] == 350  # 100 + 200 + 50
+    assert usage["output_tokens"] == 150  # 50 + 75 + 25
+    assert usage["cache_creation_tokens"] == 1500  # 1000 + 0 + 500
+    assert usage["cache_read_tokens"] == 4000  # 500 + 1500 + 2000
+
+    # Verify context_used is the final message's full context (input + cache read)
+    assert index["context_used"] == 2050  # 50 input + 2000 cache_read
+
 
 def test_build_trajectory_index_minimal(minimal_transcript_jsonl):
     """Test build_trajectory_index with minimal transcript."""
@@ -188,6 +216,16 @@ def test_build_trajectory_index_minimal(minimal_transcript_jsonl):
     assert index["tool_summary"] == {}
     assert index["duration_seconds"] == 1
 
+    # Verify usage is zero when no usage data in transcript
+    usage = index["usage"]
+    assert usage["input_tokens"] == 0
+    assert usage["output_tokens"] == 0
+
+    # context_used is 0 when no usage data
+    assert index["context_used"] == 0
+    assert usage["cache_creation_tokens"] == 0
+    assert usage["cache_read_tokens"] == 0
+
 
 def test_build_trajectory_index_empty(empty_transcript_jsonl):
     """Test build_trajectory_index with empty file returns empty stats."""
@@ -199,6 +237,13 @@ def test_build_trajectory_index_empty(empty_transcript_jsonl):
     assert index["tool_summary"] == {}
     assert index["model"] is None
     assert index["duration_seconds"] is None
+
+    # Verify usage is zero for empty transcript
+    usage = index["usage"]
+    assert usage["input_tokens"] == 0
+    assert usage["output_tokens"] == 0
+    assert usage["cache_creation_tokens"] == 0
+    assert usage["cache_read_tokens"] == 0
 
 
 def test_build_trajectory_index_malformed(malformed_transcript_jsonl):

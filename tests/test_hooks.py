@@ -355,6 +355,166 @@ def test_stop_hook_captures_last_assistant_message(runner, setup_session, tmp_pa
     assert (session_dir / "result").read_text() == "Final answer"
 
 
+def test_context_hook_outputs_usage(runner, tmp_path):
+    """Test context hook outputs usage info to stderr."""
+    # Create a mock transcript with usage data
+    transcript_file = tmp_path / "transcript.jsonl"
+    transcript_lines = [
+        orjson.dumps({
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": "Hello"}],
+                "usage": {
+                    "input_tokens": 100,
+                    "cache_read_input_tokens": 5000,
+                    "cache_creation_input_tokens": 200,
+                    "output_tokens": 50,
+                }
+            }
+        }).decode(),
+    ]
+    transcript_file.write_text("\n".join(transcript_lines))
+
+    input_json = orjson.dumps({"transcript_path": str(transcript_file)}).decode()
+    result = runner.invoke(main, ["context"], input=input_json)
+
+    assert result.exit_code == 0
+    # Output goes to stderr, which click captures in result.output for testing
+    assert "5,300 tokens" in result.output
+    assert "2.6%" in result.output  # 5300/200000 = 2.65%
+
+
+def test_context_hook_no_transcript(runner):
+    """Test context hook handles missing transcript gracefully."""
+    input_json = orjson.dumps({}).decode()
+    result = runner.invoke(main, ["context"], input=input_json)
+
+    assert result.exit_code == 0
+    assert result.output == ""
+
+
+def test_context_gate_blocks_over_threshold(runner, tmp_path, monkeypatch):
+    """Test context-gate blocks action tools when context exceeds 50k."""
+    # Create a mock transcript with high context usage
+    transcript_file = tmp_path / "transcript.jsonl"
+    transcript_lines = [
+        orjson.dumps({
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": "Hello"}],
+                "usage": {
+                    "input_tokens": 1000,
+                    "cache_read_input_tokens": 55000,  # Over 50k threshold
+                    "cache_creation_input_tokens": 0,
+                    "output_tokens": 100,
+                }
+            }
+        }).decode(),
+    ]
+    transcript_file.write_text("\n".join(transcript_lines))
+
+    # Mock find_current_transcript to return our test file
+    from scope.hooks import handler
+    monkeypatch.setattr(handler, "find_current_transcript", lambda: transcript_file)
+
+    input_json = orjson.dumps({"tool_name": "Edit"}).decode()
+    result = runner.invoke(main, ["context-gate"], input=input_json)
+
+    assert result.exit_code == 2  # Blocking error
+    assert "BLOCKED" in result.output
+    assert "56,000 tokens" in result.output
+    assert "HANDOFF" in result.output
+    assert "SPLIT" in result.output
+
+
+def test_context_gate_allows_under_threshold(runner, tmp_path, monkeypatch):
+    """Test context-gate allows action tools when context is under 50k."""
+    transcript_file = tmp_path / "transcript.jsonl"
+    transcript_lines = [
+        orjson.dumps({
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": "Hello"}],
+                "usage": {
+                    "input_tokens": 1000,
+                    "cache_read_input_tokens": 30000,  # Under 50k threshold
+                    "cache_creation_input_tokens": 0,
+                    "output_tokens": 100,
+                }
+            }
+        }).decode(),
+    ]
+    transcript_file.write_text("\n".join(transcript_lines))
+
+    from scope.hooks import handler
+    monkeypatch.setattr(handler, "find_current_transcript", lambda: transcript_file)
+
+    input_json = orjson.dumps({"tool_name": "Edit"}).decode()
+    result = runner.invoke(main, ["context-gate"], input=input_json)
+
+    assert result.exit_code == 0
+    assert result.output == ""
+
+
+def test_context_gate_blocks_read_tools(runner, tmp_path, monkeypatch):
+    """Test context-gate blocks read tools when over threshold."""
+    transcript_file = tmp_path / "transcript.jsonl"
+    transcript_lines = [
+        orjson.dumps({
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": "Hello"}],
+                "usage": {
+                    "input_tokens": 1000,
+                    "cache_read_input_tokens": 60000,  # Over threshold
+                    "cache_creation_input_tokens": 0,
+                    "output_tokens": 100,
+                }
+            }
+        }).decode(),
+    ]
+    transcript_file.write_text("\n".join(transcript_lines))
+
+    from scope.hooks import handler
+    monkeypatch.setattr(handler, "find_current_transcript", lambda: transcript_file)
+
+    # Read, Grep, Glob should all be blocked over threshold
+    for tool in ["Read", "Grep", "Glob"]:
+        input_json = orjson.dumps({"tool_name": tool}).decode()
+        result = runner.invoke(main, ["context-gate"], input=input_json)
+        assert result.exit_code == 2, f"{tool} should be blocked"
+        assert "BLOCKED" in result.output
+
+
+def test_context_gate_allows_scope_commands(runner, tmp_path, monkeypatch):
+    """Test context-gate allows scope spawn/wait/poll even over threshold."""
+    transcript_file = tmp_path / "transcript.jsonl"
+    transcript_lines = [
+        orjson.dumps({
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": "Hello"}],
+                "usage": {
+                    "input_tokens": 1000,
+                    "cache_read_input_tokens": 60000,  # Over threshold
+                    "cache_creation_input_tokens": 0,
+                    "output_tokens": 100,
+                }
+            }
+        }).decode(),
+    ]
+    transcript_file.write_text("\n".join(transcript_lines))
+
+    from scope.hooks import handler
+    monkeypatch.setattr(handler, "find_current_transcript", lambda: transcript_file)
+
+    # scope commands should be allowed
+    for cmd in ['scope spawn "task"', 'scope wait', 'scope poll']:
+        input_json = orjson.dumps({"tool_name": "Bash", "tool_input": {"command": cmd}}).decode()
+        result = runner.invoke(main, ["context-gate"], input=input_json)
+        assert result.exit_code == 0, f"scope command should be allowed: {cmd}"
+
+
 def test_infer_activity_read():
     """Test infer_activity for Read tool."""
     assert infer_activity("Read", {"file_path": "/path/to/file.py"}) == "reading file.py"
@@ -492,6 +652,107 @@ def test_install_hooks_idempotent(mock_claude_dir):
         if h["hooks"][0]["command"] == "scope-hook activity"
     ]
     assert len(scope_hooks) == 1
+
+
+def test_install_hooks_updates_changed_hooks(mock_claude_dir):
+    """Test install_hooks replaces outdated scope hooks with current config."""
+    settings_path = mock_claude_dir / "settings.json"
+
+    # Simulate old configuration with outdated scope-hook command
+    existing = {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Task",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            # Old scope hook format - will be replaced
+                            "command": "scope-hook block-task",
+                        }
+                    ],
+                },
+            ],
+            "PostToolUse": [
+                {
+                    "matcher": "*",
+                    "hooks": [{"type": "command", "command": "scope-hook activity"}],
+                }
+            ],
+        }
+    }
+    settings_path.write_bytes(orjson.dumps(existing))
+
+    install_hooks()
+
+    settings = orjson.loads(settings_path.read_bytes())
+
+    # Should have replaced old Task hook with current config
+    task_hooks = [
+        h for h in settings["hooks"]["PreToolUse"]
+        if h["matcher"] == "Task"
+    ]
+    assert len(task_hooks) == 1
+    # Command should be updated to current HOOK_CONFIG
+    assert "scope spawn" in task_hooks[0]["hooks"][0]["command"]
+
+
+def test_install_hooks_removes_stale_scope_hooks(mock_claude_dir):
+    """Test install_hooks removes scope hooks no longer in config."""
+    settings_path = mock_claude_dir / "settings.json"
+
+    # Simulate old configuration with a scope hook that no longer exists
+    existing = {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "OldMatcher",
+                    "hooks": [
+                        {"type": "command", "command": "scope-hook old-command"}
+                    ],
+                },
+                {
+                    "matcher": "*",
+                    "hooks": [
+                        {"type": "command", "command": "my-custom-hook"}
+                    ],
+                },
+            ],
+        }
+    }
+    settings_path.write_bytes(orjson.dumps(existing))
+
+    install_hooks()
+
+    settings = orjson.loads(settings_path.read_bytes())
+
+    # Old scope hook should be removed
+    commands = [
+        h["hooks"][0]["command"]
+        for h in settings["hooks"]["PreToolUse"]
+    ]
+    assert "scope-hook old-command" not in commands
+    # Custom hook should remain
+    assert "my-custom-hook" in commands
+
+
+def test_install_hooks_exact_match_with_config(mock_claude_dir):
+    """Test install_hooks produces exact match with HOOK_CONFIG on clean install."""
+    from scope.hooks.install import HOOK_CONFIG
+
+    settings_path = mock_claude_dir / "settings.json"
+
+    install_hooks()
+
+    settings = orjson.loads(settings_path.read_bytes())
+
+    # Every event in HOOK_CONFIG should have exact hooks
+    for event, expected_hooks in HOOK_CONFIG.items():
+        assert event in settings["hooks"], f"Missing event: {event}"
+        actual_hooks = settings["hooks"][event]
+        assert len(actual_hooks) == len(expected_hooks), f"Wrong hook count for {event}"
+        for i, expected in enumerate(expected_hooks):
+            assert actual_hooks[i] == expected, f"Hook mismatch at {event}[{i}]"
 
 
 def test_uninstall_hooks_removes_scope_hooks(mock_claude_dir):
