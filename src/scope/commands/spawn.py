@@ -243,6 +243,8 @@ def spawn(
                     )
                     break
                 time.sleep(0.1)
+            # SessionStart fires during startup but the input prompt may not be ready yet
+            time.sleep(0.3)
         else:
             # In test environment, wait a short time for process to start
             time.sleep(0.5)
