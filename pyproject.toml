@@ -1,6 +1,6 @@
 [project]
 name = "scopeai"
-version = "0.1.4"
+version = "0.1.5"
 description = "Subagent orchestration for Claude Code"
 readme = "README.md"
 license = {text = "MIT"}
