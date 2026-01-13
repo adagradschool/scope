@@ -38,6 +38,7 @@ dependencies = [
     "click>=8.0.0",
     "orjson>=3.9.0",
     "watchfiles>=0.21.0",
+    "dspy-ai>=2.5.0",
 ]
 
 [project.urls]

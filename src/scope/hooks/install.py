@@ -13,6 +13,7 @@ from uuid import uuid4
 import orjson
 
 from scope.core.config import content_hash, read_all_versions, write_all_versions
+from scope.prompts import get_all_skills, load_command
 
 # Hook configuration to install
 HOOK_CONFIG = {
@@ -146,303 +147,6 @@ def get_global_claude_md_path() -> Path:
     return Path.home() / ".claude" / "CLAUDE.md"
 
 
-RALPH_SKILL_CONTENT = """---
-name: ralph
-description: Iterative refinement loops. Use when improving outputs through critique cycles, quality improvement, polish/editing tasks, or convergent optimization toward a goal.
----
-
-# RALPH: Iterative Refinement Loop
-
-Critique → Evaluate → Act → Repeat until done.
-
-## 1. Lock Variables (ask one at a time)
-- **Goal**: What does done look like?
-- **Max iterations**: Default 5
-- **Delta threshold**: When is improvement too small to continue?
-
-Do not proceed until confirmed.
-
-## 2. Loop
-```
-while iterations < max:
-    critique = scope spawn "Critique: evaluate current state against goal"
-    scope wait
-
-    if goal_met(critique) or delta < threshold:
-        break
-
-    scope spawn "Improve: apply this critique: {critique}"
-    scope wait
-```
-
-## 3. Exit
-Report: why stopped, what changed, current state.
-
-## Rules
-- Each step is a fresh subagent via scope spawn
-- Never improve without evaluating the critique first
-- Stop early if delta is negligible
-"""
-
-TDD_SKILL_CONTENT = """---
-name: tdd
-description: Test-driven development. Use for new feature implementation, bug fixes requiring regression tests, or any code change needing test coverage.
----
-
-# TDD: Test-Driven Development
-
-Red → Green → Refactor. Tests first, always.
-
-## Cycle
-1. **Red**: Write a failing test for the next piece of functionality
-2. **Green**: Write minimal code to make it pass
-3. **Refactor**: Clean up while keeping tests green
-
-## Workflow
-```
-scope spawn "Write failing test for: {feature}"
-scope wait
-
-scope spawn "Implement minimal code to pass the test"
-scope wait
-
-scope spawn "Refactor: clean up implementation, ensure tests pass"
-scope wait
-```
-
-## Rules
-- Never write implementation before the test exists
-- Each test should fail for the right reason before you fix it
-- Keep cycles small: one behavior per test
-- Run tests after every change
-- Refactor only when green
-"""
-
-RLM_SKILL_CONTENT = """---
-name: rlm
-description: Large context exploration. Use when exploring large codebases (>100K tokens), unknown codebase structure, finding needles in haystacks, or iterative examination of unfamiliar content.
----
-
-# RLM: Recursive Language Model Exploration
-
-Peek → Grep → Dive. Explore large contexts without flooding your window.
-
-## Pattern
-1. **Peek**: Inspect structure first (head, tail, outline)
-2. **Grep**: Narrow search with patterns before diving deep
-3. **Dive**: Spawn subagents for focused analysis of specific sections
-
-## Workflow
-```
-# 1. Peek at structure
-Read first 100 lines, check file structure, identify sections
-
-# 2. Grep to locate
-Search for relevant patterns before spawning
-
-# 3. Dive on specific targets
-scope spawn "Analyze {specific_section} in {file}"
-scope wait
-```
-
-## Rules
-- ALWAYS peek before spawning - understand structure first
-- Use grep to narrow, don't spawn "analyze everything"
-- Max dive depth: 3 levels
-- Each dive must be smaller scope than parent
-- If >50% of dives return empty, try different patterns
-"""
-
-MAP_REDUCE_SKILL_CONTENT = """---
-name: map-reduce
-description: Parallel independent tasks with aggregation. Use for file-by-file analysis, aggregatable results across chunks, or when N workers can process simultaneously.
----
-
-# Map-Reduce: Parallel Workers + Aggregation
-
-Fork N workers → Wait all → Reduce results.
-
-## Phases
-1. **Map**: Spawn N independent workers in parallel
-2. **Wait**: Block until all complete
-3. **Reduce**: Synthesize results into final output
-
-## Workflow
-```
-# Map phase - spawn workers in parallel
-scope spawn "Process chunk 1: {specific_task}"
-scope spawn "Process chunk 2: {specific_task}"
-scope spawn "Process chunk 3: {specific_task}"
-
-# Wait phase - block for all
-scope wait
-
-# Reduce phase - synthesize (you do this, or spawn reducer)
-Combine results from all workers into final output
-```
-
-## Rules
-- Workers MUST be independent (no shared state)
-- Each worker gets a specific, bounded chunk
-- Wait for ALL workers before reducing
-- Reducer sees only outputs, not worker context
-- If a worker fails, decide: retry, skip, or abort
-"""
-
-MAKER_CHECKER_SKILL_CONTENT = """---
-name: maker-checker
-description: High-stakes work needing independent validation. Use for security-sensitive code, critical outputs needing review, or separation of creation and verification.
----
-
-# Maker-Checker: Separation of Concerns
-
-One makes, another validates. Never self-review.
-
-## Roles
-- **Maker**: Creates the artifact (code, plan, analysis)
-- **Checker**: Reviews, critiques, validates independently
-
-## Workflow
-```
-# Maker creates
-scope spawn "Create: {artifact_description}"
-scope wait
-
-# Checker validates (fresh context, no maker bias)
-scope spawn "Review: validate {artifact}, check for {criteria}"
-scope wait
-
-# If checker finds issues, iterate
-scope spawn "Fix: address these issues: {checker_feedback}"
-scope wait
-```
-
-## Rules
-- Maker and checker MUST be separate agents (fresh context)
-- Checker never sees maker's reasoning, only output
-- Define validation criteria upfront
-- Iterate until checker approves or max iterations hit
-- For critical work: use different models (maker=fast, checker=thorough)
-"""
-
-DAG_SKILL_CONTENT = """---
-name: dag
-description: Multi-step workflows with task dependencies. Use for build pipelines requiring ordered execution, or complex orchestration with partial parallelism.
----
-
-# DAG: Dependency Graph Execution
-
-Tasks with dependencies. Use --id and --after for ordering.
-
-## Syntax
-```
-scope spawn --id=A "Task A (no deps)"
-scope spawn --id=B "Task B (no deps)"
-scope spawn --id=C --after=A,B "Task C (needs A and B)"
-scope spawn --id=D --after=C "Task D (needs C)"
-```
-
-## Workflow
-```
-# 1. Identify tasks and dependencies
-# 2. Assign IDs to each task
-# 3. Spawn with --after for dependencies
-# 4. scope wait blocks until all complete
-
-scope spawn --id=parse "Parse input files"
-scope spawn --id=validate "Validate schema"
-scope spawn --id=transform --after=parse,validate "Transform data"
-scope spawn --id=output --after=transform "Generate output"
-scope wait
-```
-
-## Rules
-- Tasks without --after start immediately
-- --after=X,Y waits for BOTH X and Y
-- Cycles are forbidden (A->B->A)
-- Failed dependency = dependent task skipped
-- Use descriptive IDs (not just a,b,c)
-"""
-
-SCOPE_COMMAND_CONTENT = """<prompt>
-  <instructions>
-You are scope-managed. Task tool is disabled; use `scope spawn` for subagents.
-
-## MANDATORY: Skill Selection
-
-Before doing ANY work, you MUST evaluate if a skill applies. This is NOT optional.
-
-| Skill | Trigger Patterns |
-|-------|------------------|
-| `/ralph` | "improve", "refine", "iterate", "polish", "critique", "enhance quality" |
-| `/tdd` | "add tests", "test-driven", "fix bug with test", "implement feature" (code changes) |
-| `/rlm` | "explore", "find", "understand codebase", "analyze large file", ">100 lines to examine" |
-| `/map-reduce` | "process multiple files", "batch", "analyze each", "parallel tasks" |
-| `/maker-checker` | "security", "critical", "validate", "review", "high-stakes" |
-| `/dag` | "pipeline", "ordered steps", "A then B then C", "dependencies between tasks" |
-
-## Enforcement Protocol
-
-1. **STOP** - Do not begin work immediately
-2. **CLASSIFY** - Match the task against skill triggers above
-3. **INVOKE or PROCEED**:
-   - If a skill matches: `Skill tool with skill="<name>"` - MANDATORY, no exceptions
-   - If NO skill matches: Proceed with direct execution
-
-## Examples
-
-- "Improve this code quality" → MUST invoke `/ralph`
-- "Add a new endpoint with tests" → MUST invoke `/tdd`
-- "Find where errors are handled" → MUST invoke `/rlm`
-- "Process all .py files" → MUST invoke `/map-reduce`
-- "Review this security-critical change" → MUST invoke `/maker-checker`
-- "Build, then test, then deploy" → MUST invoke `/dag`
-- "Rename this variable" → No skill matches, proceed directly
-
-## Context Limit (50k tokens)
-
-When blocked by context gate:
-- **HANDOFF**: `scope spawn "Continue: [progress] + [remaining work]"`
-- **SPLIT**: `scope spawn "subtask 1"` + `scope spawn "subtask 2"` + `scope wait`
-
-## Commands
-
-| Command | Effect |
-|---------|--------|
-| `scope spawn "task"` | Start subagent |
-| `scope spawn --id=X --after=Y "task"` | Start with dependency |
-| `scope poll` | Check status (non-blocking) |
-| `scope wait` | Block until complete |
-
-## Recursion Guard
-
-- Subtasks MUST be strictly smaller than parent
-- NEVER spawn a task similar to what you received—do it yourself
-- Include specific context: files, functions, progress
-
-## CLI Quick Reference
-
-```
-scope                  # Launch TUI (shows all sessions)
-scope spawn "task"     # Start subagent with task
-scope spawn --plan     # Start in plan mode
-scope spawn --model=X  # Use specific model (opus/sonnet/haiku)
-scope poll [id]        # Check status (non-blocking)
-scope wait [id]        # Block until done
-scope abort <id>       # Kill a session
-scope trajectory <id>  # Export conversation JSON
-scope setup            # Reinstall hooks/skills
-scope uninstall        # Remove scope integration
-```
-
-DAG options: `--id=NAME --after=A,B` for dependency ordering.
-  </instructions>
-</prompt>
-
-$ARGUMENTS
-"""
-
-
 def get_claude_commands_dir() -> Path:
     """Get the path to Claude Code's custom commands directory."""
     return Path.home() / ".claude" / "commands"
@@ -460,7 +164,7 @@ def install_custom_commands() -> None:
 
     # Install /scope command (only scope stays as custom command)
     scope_path = commands_dir / "scope.md"
-    scope_path.write_text(SCOPE_COMMAND_CONTENT)
+    scope_path.write_text(load_command("scope"))
 
 
 def install_skills() -> None:
@@ -471,16 +175,7 @@ def install_skills() -> None:
     """
     skills_dir = get_claude_skills_dir()
 
-    skills = {
-        "ralph": RALPH_SKILL_CONTENT,
-        "tdd": TDD_SKILL_CONTENT,
-        "rlm": RLM_SKILL_CONTENT,
-        "map-reduce": MAP_REDUCE_SKILL_CONTENT,
-        "maker-checker": MAKER_CHECKER_SKILL_CONTENT,
-        "dag": DAG_SKILL_CONTENT,
-    }
-
-    for skill_name, content in skills.items():
+    for skill_name, content in get_all_skills().items():
         skill_dir = skills_dir / skill_name
         skill_dir.mkdir(parents=True, exist_ok=True)
         skill_path = skill_dir / "SKILL.md"
@@ -680,19 +375,14 @@ def _hooks_version() -> str:
 
 def _skills_version() -> str:
     """Get version hash for skills based on skill content."""
-    return content_hash(
-        RALPH_SKILL_CONTENT,
-        TDD_SKILL_CONTENT,
-        RLM_SKILL_CONTENT,
-        MAP_REDUCE_SKILL_CONTENT,
-        MAKER_CHECKER_SKILL_CONTENT,
-        DAG_SKILL_CONTENT,
-    )
+    skills = get_all_skills()
+    # Sort by name for consistent hashing
+    return content_hash(*(skills[k] for k in sorted(skills)))
 
 
 def _commands_version() -> str:
     """Get version hash for custom commands."""
-    return content_hash(SCOPE_COMMAND_CONTENT)
+    return content_hash(load_command("scope"))
 
 
 def _ccstatusline_version() -> str:
