@@ -79,6 +79,27 @@ def is_installed() -> bool:
         return False
 
 
+def is_server_running() -> bool:
+    """Check if a tmux server is running and reachable."""
+    try:
+        result = subprocess.run(
+            _tmux_cmd(["list-sessions"]),
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return False
+
+    if result.returncode == 0:
+        return True
+
+    stderr = (result.stderr or "").lower()
+    if "no server running" in stderr or "failed to connect to server" in stderr:
+        return False
+
+    return False
+
+
 def tmux_session_name(session_id: str) -> str:
     """Convert a scope session ID to a tmux session name.
 

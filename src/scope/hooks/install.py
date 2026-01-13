@@ -718,6 +718,7 @@ def ensure_setup(quiet: bool = True, force: bool = False) -> None:
         force: If True, force reinstall of all components (used by 'scope setup').
     """
     from scope.core.tmux import is_installed as tmux_is_installed
+    from scope.core.tmux import is_server_running
 
     # Skip if tmux not installed (can't do full setup)
     if not tmux_is_installed():
@@ -763,18 +764,22 @@ def ensure_setup(quiet: bool = True, force: bool = False) -> None:
     # Check and update tmux hooks
     tmux_ver = _tmux_hooks_version()
     if force or installed_versions.get("tmux_hooks") != tmux_ver:
-        try:
-            success, error = install_tmux_hooks()
-            if success:
-                installed_versions["tmux_hooks"] = tmux_ver
-                updated.append("tmux_hooks")
-            elif not quiet:
-                print(
-                    f"Warning: Failed to install tmux hooks: {error}", file=sys.stderr
-                )
-        except Exception as e:
-            if not quiet:
-                print(f"Warning: Failed to install tmux hooks: {e}", file=sys.stderr)
+        if is_server_running():
+            try:
+                success, error = install_tmux_hooks()
+                if success:
+                    installed_versions["tmux_hooks"] = tmux_ver
+                    updated.append("tmux_hooks")
+                elif not quiet:
+                    print(
+                        f"Warning: Failed to install tmux hooks: {error}",
+                        file=sys.stderr,
+                    )
+            except Exception as e:
+                if not quiet:
+                    print(
+                        f"Warning: Failed to install tmux hooks: {e}", file=sys.stderr
+                    )
 
     # Check and update ccstatusline (only if not already configured OR force)
     ccstatusline_ver = _ccstatusline_version()
