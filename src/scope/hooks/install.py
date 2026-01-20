@@ -406,7 +406,7 @@ Before doing ANY work, you MUST evaluate if a skill applies. This is NOT optiona
 - "Build, then test, then deploy" → MUST invoke `/dag`
 - "Rename this variable" → No skill matches, proceed directly
 
-## Context Limit (50k tokens)
+## Context Limit (100k tokens)
 
 When blocked by context gate:
 - **HANDOFF**: `scope spawn "Continue: [progress] + [remaining work]"`

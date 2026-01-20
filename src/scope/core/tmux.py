@@ -574,6 +574,57 @@ def get_current_pane_id() -> str | None:
     return None
 
 
+def get_rightmost_pane_id() -> str | None:
+    """Get the pane ID for the rightmost pane in the current window."""
+    result = subprocess.run(
+        _tmux_cmd(["list-panes", "-F", "#{pane_id}\t#{pane_right}"]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+
+    rightmost_id = None
+    rightmost_edge = None
+    for line in result.stdout.strip().splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("\t", 1)
+        if len(parts) != 2:
+            continue
+        pane_id, pane_right = parts
+        try:
+            pane_right_edge = int(pane_right)
+        except ValueError:
+            continue
+        if rightmost_edge is None or pane_right_edge > rightmost_edge:
+            rightmost_edge = pane_right_edge
+            rightmost_id = pane_id
+
+    return rightmost_id
+
+
+def get_pane_option(pane_id: str, option: str) -> str | None:
+    """Get a pane-local option value."""
+    result = subprocess.run(
+        _tmux_cmd(["display-message", "-t", pane_id, "-p", f"#{{@{option}}}"]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    value = result.stdout.strip()
+    return value if value else None
+
+
+def get_right_pane_session_id() -> str | None:
+    """Get the scope session ID for the rightmost pane if present."""
+    pane_id = get_rightmost_pane_id()
+    if pane_id is None:
+        return None
+    return get_pane_option(pane_id, "scope_session_id")
+
+
 def pane_target_for_window(window_name: str) -> str:
     """Build a pane target for the first pane in a window."""
     current = get_current_session()
@@ -763,7 +814,7 @@ def send_keys(
 
     Args:
         target: The tmux target to send keys to (e.g., ":w0" for window, "scope-0" for session).
-        keys: The text to send.
+        keys: The text to send. If empty, only submits Enter when submit=True.
         submit: Whether to send C-m (Enter) after the keys to submit. Defaults to True.
         retries: Number of retry attempts on failure. Defaults to 3.
         verify: Whether to verify key delivery by checking pane content. Defaults to True.
@@ -795,12 +846,13 @@ def send_keys(
                 if verify and keys:
                     content_before, capture_ok = _capture_pane(target)
 
-                # Use -l flag to send keys literally (prevents special char interpretation)
-                cmd = _tmux_cmd(["send-keys", "-t", target, "-l", keys])
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                if result.returncode != 0:
-                    last_error = f"Failed to send keys to {target}: {result.stderr}"
-                    raise TmuxError(last_error)
+                if keys:
+                    # Use -l flag to send keys literally (prevents special char interpretation)
+                    cmd = _tmux_cmd(["send-keys", "-t", target, "-l", keys])
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    if result.returncode != 0:
+                        last_error = f"Failed to send keys to {target}: {result.stderr}"
+                        raise TmuxError(last_error)
 
                 if submit:
                     # Small delay to let keys be processed before Enter

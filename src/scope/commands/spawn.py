@@ -35,6 +35,40 @@ from scope.hooks.install import install_tmux_hooks
 
 # Placeholder task - will be inferred from first prompt via hooks
 PENDING_TASK = "(pending...)"
+CONTRACT_CHUNK_SIZE = 2000
+
+
+def _task_still_pending(task_path: Path) -> bool:
+    """Return True if the task file still contains the pending placeholder."""
+    try:
+        return task_path.read_text().strip() == PENDING_TASK
+    except FileNotFoundError:
+        return False
+
+
+def _wait_for_task_update(task_path: Path, timeout: float) -> bool:
+    """Wait for task to move past pending; return True if updated."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not _task_still_pending(task_path):
+            return True
+        time.sleep(0.1)
+    return not _task_still_pending(task_path)
+
+
+def _send_contract(target: str, contract: str) -> None:
+    """Send a contract to Claude Code, chunking if it is large."""
+    if len(contract) <= CONTRACT_CHUNK_SIZE:
+        send_keys(target, contract)
+        return
+
+    for offset in range(0, len(contract), CONTRACT_CHUNK_SIZE):
+        chunk = contract[offset : offset + CONTRACT_CHUNK_SIZE]
+        send_keys(target, chunk, submit=False, verify=False)
+        time.sleep(0.02)
+    # Allow the client to process the paste before submitting.
+    time.sleep(min(2.0, max(0.2, len(contract) / 5000)))
+    send_keys(target, "", submit=True, verify=False)
 
 
 @click.command()
@@ -254,7 +288,21 @@ def spawn(
             target = f":{window_name}"
         else:
             target = f"{get_scope_session()}:{window_name}"
-        send_keys(target, contract)
+        _send_contract(target, contract)
+
+        # If the task is still pending, Enter may not have been delivered.
+        # Resend Enter up to 5 times to ensure the prompt submits.
+        if not skip_ready_check:
+            task_path = session_dir / "task"
+            if _task_still_pending(task_path):
+                for _ in range(5):
+                    if _wait_for_task_update(task_path, timeout=1.0):
+                        break
+                    try:
+                        send_keys(target, "", submit=True, verify=False)
+                    except TmuxError:
+                        pass
+                _wait_for_task_update(task_path, timeout=1.0)
 
     except TmuxError as e:
         error_msg = str(e)

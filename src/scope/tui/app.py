@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from textual.app import App, ComposeResult
+from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Static
 
@@ -28,6 +29,7 @@ from scope.core.tmux import (
     get_current_session,
     get_current_pane_id,
     get_scope_session,
+    get_right_pane_session_id,
     has_window,
     in_tmux,
     detach_client,
@@ -203,10 +205,19 @@ class ScopeApp(App):
     def refresh_sessions(self) -> None:
         """Reload and display all sessions."""
         sessions = load_all()
-        table = self.query_one(SessionTable)
-        empty_msg = self.query_one("#empty-message", Static)
+        try:
+            table = self.query_one(SessionTable)
+            empty_msg = self.query_one("#empty-message", Static)
+        except NoMatches:
+            return
 
         if sessions:
+            if in_tmux():
+                right_session_id = get_right_pane_session_id()
+                if right_session_id and any(
+                    session.id == right_session_id for session in sessions
+                ):
+                    table.set_selected_session(right_session_id)
             table.update_sessions(sessions, hide_done=self._hide_done)
             table.display = True
             empty_msg.display = False

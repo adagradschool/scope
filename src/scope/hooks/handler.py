@@ -541,15 +541,15 @@ def context() -> None:
     )
 
 
-# Context threshold for forcing spawn (50k tokens)
-CONTEXT_SPAWN_THRESHOLD = 50_000
+# Context threshold for forcing spawn (100k tokens)
+CONTEXT_SPAWN_THRESHOLD = 100_000
 
 
 @main.command("context-gate")
 def context_gate() -> None:
     """PreToolUse hook to force spawning when context exceeds threshold.
 
-    Blocks most tools when context > 50k tokens, forcing the agent to
+    Blocks most tools when context > 100k tokens, forcing the agent to
     spawn subtasks instead. Only allows Bash for `scope` commands.
     """
     data = read_stdin_json()
@@ -583,7 +583,7 @@ def context_gate() -> None:
     # Over threshold - block action tools
     context_pct = (context_tokens / 200_000) * 100
     click.echo(
-        f"BLOCKED: Context ({context_tokens:,} tokens, {context_pct:.1f}%) exceeds 50k threshold.\n"
+        f"BLOCKED: Context ({context_tokens:,} tokens, {context_pct:.1f}%) exceeds 100k threshold.\n"
         f"You must spawn subagents to continue. Choose one:\n"
         f'  1. HANDOFF: scope spawn "Continue: [current status + what remains]"\n'
         f"  2. SPLIT: spawn multiple focused subtasks for remaining work",

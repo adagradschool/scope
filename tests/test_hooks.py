@@ -394,7 +394,7 @@ def test_context_hook_no_transcript(runner):
 
 
 def test_context_gate_blocks_over_threshold(runner, tmp_path, monkeypatch):
-    """Test context-gate blocks action tools when context exceeds 50k."""
+    """Test context-gate blocks action tools when context exceeds 100k."""
     # Create a mock transcript with high context usage
     transcript_file = tmp_path / "transcript.jsonl"
     transcript_lines = [
@@ -404,7 +404,7 @@ def test_context_gate_blocks_over_threshold(runner, tmp_path, monkeypatch):
                 "content": [{"type": "text", "text": "Hello"}],
                 "usage": {
                     "input_tokens": 1000,
-                    "cache_read_input_tokens": 55000,  # Over 50k threshold
+                    "cache_read_input_tokens": 105000,  # Over 100k threshold
                     "cache_creation_input_tokens": 0,
                     "output_tokens": 100,
                 }
@@ -422,13 +422,13 @@ def test_context_gate_blocks_over_threshold(runner, tmp_path, monkeypatch):
 
     assert result.exit_code == 2  # Blocking error
     assert "BLOCKED" in result.output
-    assert "56,000 tokens" in result.output
+    assert "106,000 tokens" in result.output
     assert "HANDOFF" in result.output
     assert "SPLIT" in result.output
 
 
 def test_context_gate_allows_under_threshold(runner, tmp_path, monkeypatch):
-    """Test context-gate allows action tools when context is under 50k."""
+    """Test context-gate allows action tools when context is under 100k."""
     transcript_file = tmp_path / "transcript.jsonl"
     transcript_lines = [
         orjson.dumps({
@@ -437,7 +437,7 @@ def test_context_gate_allows_under_threshold(runner, tmp_path, monkeypatch):
                 "content": [{"type": "text", "text": "Hello"}],
                 "usage": {
                     "input_tokens": 1000,
-                    "cache_read_input_tokens": 30000,  # Under 50k threshold
+                    "cache_read_input_tokens": 90000,  # Under 100k threshold
                     "cache_creation_input_tokens": 0,
                     "output_tokens": 100,
                 }
@@ -466,7 +466,7 @@ def test_context_gate_blocks_read_tools(runner, tmp_path, monkeypatch):
                 "content": [{"type": "text", "text": "Hello"}],
                 "usage": {
                     "input_tokens": 1000,
-                    "cache_read_input_tokens": 60000,  # Over threshold
+                    "cache_read_input_tokens": 120000,  # Over threshold
                     "cache_creation_input_tokens": 0,
                     "output_tokens": 100,
                 }
@@ -496,7 +496,7 @@ def test_context_gate_allows_scope_commands(runner, tmp_path, monkeypatch):
                 "content": [{"type": "text", "text": "Hello"}],
                 "usage": {
                     "input_tokens": 1000,
-                    "cache_read_input_tokens": 60000,  # Over threshold
+                    "cache_read_input_tokens": 120000,  # Over threshold
                     "cache_creation_input_tokens": 0,
                     "output_tokens": 100,
                 }
