@@ -40,7 +40,7 @@ HOOK_CONFIG = {
             "hooks": [
                 {
                     "type": "command",
-                    "command": 'sh -c \'[ -n "$SCOPE_SESSION_ID" ] && scope-hook context-gate\'',
+                    "command": "sh -c '[ -n \"$SCOPE_SESSION_ID\" ] && scope-hook context-gate'",
                 }
             ],
         },
