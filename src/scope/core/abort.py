@@ -11,6 +11,7 @@ from scope.core.tmux import (
     has_window_in_session,
     kill_session,
     kill_window_in_session,
+    terminate_pane_processes,
     tmux_session_name,
     tmux_window_name,
 )
@@ -46,6 +47,7 @@ def abort_session_tree(session_id: str) -> AbortResult:
     for sid in session_ids:
         tmux_name = tmux_session_name(sid)
         if has_session(tmux_name):
+            terminate_pane_processes(tmux_name)
             try:
                 kill_session(tmux_name)
             except TmuxError as e:
@@ -54,6 +56,7 @@ def abort_session_tree(session_id: str) -> AbortResult:
     for window_name in window_names:
         for tmux_session in sessions_to_check:
             if has_window_in_session(tmux_session, window_name):
+                terminate_pane_processes(f"{tmux_session}:{window_name}")
                 try:
                     kill_window_in_session(tmux_session, window_name)
                 except TmuxError as e:

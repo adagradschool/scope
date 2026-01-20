@@ -7,7 +7,9 @@ This allows attaching/detaching without destroying sessions.
 
 import os
 import shlex
+import signal
 import subprocess
+import time
 from pathlib import Path
 
 
@@ -359,6 +361,100 @@ def kill_session(name: str) -> None:
         raise TmuxError(f"Failed to kill session {name}: {result.stderr}")
 
 
+def _list_pane_pids(target: str) -> list[int]:
+    """Return pane process IDs for a tmux target."""
+    result = subprocess.run(
+        _tmux_cmd(["list-panes", "-t", target, "-F", "#{pane_pid}"]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return []
+    pids: list[int] = []
+    for line in result.stdout.strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            pids.append(int(line))
+        except ValueError:
+            continue
+    return pids
+
+
+def _process_tree(root_pids: set[int]) -> set[int]:
+    """Collect descendants of root pids using the system process table."""
+    try:
+        result = subprocess.run(
+            ["ps", "-ax", "-o", "pid=,ppid="],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return set()
+    if result.returncode != 0:
+        return set()
+
+    children: dict[int, list[int]] = {}
+    for line in result.stdout.strip().split("\n"):
+        parts = line.strip().split(None, 1)
+        if len(parts) != 2:
+            continue
+        try:
+            pid = int(parts[0])
+            ppid = int(parts[1])
+        except ValueError:
+            continue
+        children.setdefault(ppid, []).append(pid)
+
+    descendants: set[int] = set()
+    stack = list(root_pids)
+    while stack:
+        pid = stack.pop()
+        for child in children.get(pid, []):
+            if child in descendants:
+                continue
+            descendants.add(child)
+            stack.append(child)
+    return descendants
+
+
+def _kill_pids(pids: set[int], sig: signal.Signals) -> None:
+    for pid in pids:
+        try:
+            os.kill(pid, sig)
+        except ProcessLookupError:
+            continue
+        except PermissionError:
+            continue
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def terminate_pane_processes(target: str, timeout: float = 0.5) -> None:
+    """Best-effort terminate processes for panes in a target."""
+    root_pids = set(_list_pane_pids(target))
+    if not root_pids:
+        return
+
+    descendants = _process_tree(root_pids)
+    all_pids = root_pids | descendants
+
+    _kill_pids(all_pids, signal.SIGTERM)
+    time.sleep(timeout)
+    remaining = {pid for pid in all_pids if _pid_alive(pid)}
+    if remaining:
+        _kill_pids(remaining, signal.SIGKILL)
+
+
 def detach_client() -> None:
     """Detach the current tmux client without stopping sessions."""
     result = subprocess.run(
@@ -569,6 +665,13 @@ def create_window(
         target = get_scope_session()
     else:
         target = current
+
+    # Keep panes alive on early command exit so join-pane can attach reliably.
+    subprocess.run(
+        _tmux_cmd(["set-option", "-g", "remain-on-exit", "on"]),
+        capture_output=True,
+        text=True,
+    )
 
     cmd = _tmux_cmd(
         [

@@ -40,7 +40,7 @@ HOOK_CONFIG = {
             "hooks": [
                 {
                     "type": "command",
-                    "command": "scope-hook context-gate",
+                    "command": 'sh -c \'[ -n "$SCOPE_SESSION_ID" ] && scope-hook context-gate\'',
                 }
             ],
         },
@@ -153,6 +153,8 @@ description: Iterative refinement loops. Use when improving outputs through crit
 
 # RALPH: Iterative Refinement Loop
 
+You are an **orchestrator only**. Do not do any work directly—only spawn subagents and evaluate their outputs.
+
 Critique → Evaluate → Act → Repeat until done.
 
 ## 1. Lock Variables (ask one at a time)
@@ -163,15 +165,19 @@ Critique → Evaluate → Act → Repeat until done.
 Do not proceed until confirmed.
 
 ## 2. Loop
+
+Each spawn must include both the **global task** (overall goal) and the **tactical task** (specific action):
+
 ```
 while iterations < max:
-    critique = scope spawn "Critique: evaluate current state against goal"
+    scope spawn "Global: {goal}. Tactical: Critique the current state—what's wrong, what's missing, how far from done?"
     scope wait
+    # Read critique from session output
 
     if goal_met(critique) or delta < threshold:
         break
 
-    scope spawn "Improve: apply this critique: {critique}"
+    scope spawn "Global: {goal}. Tactical: Improve based on this critique: {critique}"
     scope wait
 ```
 
@@ -179,7 +185,8 @@ while iterations < max:
 Report: why stopped, what changed, current state.
 
 ## Rules
-- Each step is a fresh subagent via scope spawn
+- You are an orchestrator: spawn and evaluate only, never do the work yourself
+- Each spawn gets both global context (the goal) and tactical context (the specific step)
 - Never improve without evaluating the critique first
 - Stop early if delta is negligible
 """
@@ -269,10 +276,9 @@ Fork N workers → Wait all → Reduce results.
 
 ## Workflow
 ```
-# Map phase - spawn workers in parallel
-scope spawn "Process chunk 1: {specific_task}"
-scope spawn "Process chunk 2: {specific_task}"
-scope spawn "Process chunk 3: {specific_task}"
+# Map phase - spawn 2-3 workers MAX (batch items into chunks)
+scope spawn "Process batch 1: files A, B, C"
+scope spawn "Process batch 2: files D, E, F"
 
 # Wait phase - block for all
 scope wait
@@ -282,6 +288,7 @@ Combine results from all workers into final output
 ```
 
 ## Rules
+- Batch items into 2-3 chunks, don't spawn per-item
 - Workers MUST be independent (no shared state)
 - Each worker gets a specific, bounded chunk
 - Wait for ALL workers before reducing
@@ -419,6 +426,13 @@ When blocked by context gate:
 - Subtasks MUST be strictly smaller than parent
 - NEVER spawn a task similar to what you received—do it yourself
 - Include specific context: files, functions, progress
+
+## Limits
+
+- **Max 2-3 concurrent subagents.** Before spawning, run `scope poll` to check active count.
+- **Depth awareness.** Your depth = dots in `$SCOPE_SESSION_ID` + 1. The deeper you are, the more you should bias toward doing work directly vs spawning. Beyond depth 5, avoid spawning entirely.
+
+Batch work into 2-3 chunks rather than spawning per-item.
 
 ## CLI Quick Reference
 
