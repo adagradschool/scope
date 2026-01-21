@@ -420,6 +420,12 @@ When blocked by context gate:
 | `scope spawn --id=X --after=Y "task"` | Start with dependency |
 | `scope poll` | Check status (non-blocking) |
 | `scope wait` | Block until complete |
+| `scope tk ...` | Manage per-session tasks (proxies `tk`) |
+
+## Task Tracking (tk)
+
+Use `scope tk` to manage tasks for this session. Tickets are stored per session.
+Do not call `tk` directly; always use the `scope tk` proxy.
 
 ## Recursion Guard
 
@@ -443,6 +449,7 @@ scope spawn --plan     # Start in plan mode
 scope spawn --model=X  # Use specific model (opus/sonnet/haiku)
 scope poll [id]        # Check status (non-blocking)
 scope wait [id]        # Block until done
+scope tk ...           # Manage per-session tasks
 scope abort <id>       # Kill a session
 scope trajectory <id>  # Export conversation JSON
 scope setup            # Reinstall hooks/skills

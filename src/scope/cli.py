@@ -15,6 +15,7 @@ from scope.commands.abort import abort
 from scope.commands.poll import poll
 from scope.commands.setup import setup as setup_cmd
 from scope.commands.spawn import spawn
+from scope.commands.tk import tk
 from scope.commands.trajectory import trajectory
 from scope.commands.uninstall import uninstall
 from scope.commands.update import update
@@ -131,3 +132,4 @@ main.add_command(trajectory)
 main.add_command(uninstall)
 main.add_command(update)
 main.add_command(wait)
+main.add_command(tk)
