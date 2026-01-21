@@ -4,6 +4,8 @@ Installs hooks and configures Claude Code integration.
 """
 
 import platform
+import shutil
+import subprocess
 
 import click
 
@@ -46,6 +48,24 @@ def setup() -> None:
         raise SystemExit(1)
 
     click.echo("tmux found.")
+
+    # Ensure tk (ticket) is installed for per-session task tracking
+    if shutil.which("tk") is None:
+        click.echo("tk is not installed.", err=True)
+        system = platform.system()
+        if system == "Darwin":
+            click.echo("Installing tk via Homebrew...", err=True)
+            result = subprocess.run(["brew", "install", "ticket"])
+            if result.returncode != 0:
+                raise SystemExit(result.returncode)
+        else:
+            click.echo(
+                "Install tk with your package manager (Homebrew recommended).",
+                err=True,
+            )
+            raise SystemExit(1)
+
+    click.echo("tk found.")
 
     # Run full setup with force=True to reinstall all components
     click.echo("Installing scope components...")
