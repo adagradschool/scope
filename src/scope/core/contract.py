@@ -20,8 +20,8 @@ def generate_contract(prompt: str, depends_on: list[str] | None = None) -> str:
     """
     sections = []
 
-    # Invoke /scope command to load orchestration rules
-    sections.append("/scope")
+    # NOTE: /scope is invoked separately by the spawner (Scope TUI / CLI)
+    # to ensure the command is executed as a command, not embedded in a larger prompt.
 
     # Add dependencies section if there are dependencies
     if depends_on:

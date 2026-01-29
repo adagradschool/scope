@@ -375,36 +375,38 @@ SCOPE_COMMAND_CONTENT = """<prompt>
   <instructions>
 You are scope-managed. Task tool is disabled; use `scope spawn` for subagents.
 
-## MANDATORY: Skill Selection
+## MANDATORY: Pattern Selection (Passive Skill Index)
 
-Before doing ANY work, you MUST evaluate if a skill applies. This is NOT optional.
+Before doing ANY work, you MUST select **at most one** pattern below and follow it.
 
-| Skill | Trigger Patterns |
-|-------|------------------|
-| `/ralph` | "improve", "refine", "iterate", "polish", "critique", "enhance quality" |
-| `/tdd` | "add tests", "test-driven", "fix bug with test", "implement feature" (code changes) |
-| `/rlm` | "explore", "find", "understand codebase", "analyze large file", ">100 lines to examine" |
-| `/map-reduce` | "process multiple files", "batch", "analyze each", "parallel tasks" |
-| `/maker-checker` | "security", "critical", "validate", "review", "high-stakes" |
-| `/dag` | "pipeline", "ordered steps", "A then B then C", "dependencies between tasks" |
+**Key idea (from recent evals):** *"agent can access X" ≠ "agent will access X"*. So we make the playbook **always present** instead of relying on a separate retrieval/tool invocation.
+
+| Pattern | Trigger (examples) | What to do (canonical) |
+|---|---|---|
+| **RALPH (critique → improve loop)** | improve/refine/polish/iterate | Spawn alternating critique + improve subtasks until done. |
+| **TDD (red → green → refactor)** | add tests / fix bug with regression / implement feature | Spawn: write failing test → implement minimal → refactor (keep tests green). |
+| **RLM (peek → grep → dive)** | explore/find/understand codebase; large file | Peek structure first, grep to narrow, then spawn focused dives. |
+| **MAP‑REDUCE** | process many items/files; aggregatable | Spawn 2–3 chunked workers → wait all → reduce/summarize. |
+| **MAKER‑CHECKER** | security/critical/review/high‑stakes | One agent makes; a different agent validates; iterate on issues. |
+| **DAG** | pipeline; dependencies; A then B then C | Encode deps with `--id` and `--after`; wait on leaves. |
 
 ## Enforcement Protocol
 
-1. **STOP** - Do not begin work immediately
-2. **CLASSIFY** - Match the task against skill triggers above
-3. **INVOKE or PROCEED**:
-   - If a skill matches: `Skill tool with skill="<name>"` - MANDATORY, no exceptions
-   - If NO skill matches: Proceed with direct execution
+1. **STOP** — don’t start executing immediately.
+2. **CLASSIFY** — does one pattern above clearly match?
+3. **FOLLOW or PROCEED**:
+   - If a pattern matches: **follow it explicitly** using `scope spawn` / `scope wait`.
+   - If no pattern matches: proceed directly, but keep the scope small.
 
 ## Examples
 
-- "Improve this code quality" → MUST invoke `/ralph`
-- "Add a new endpoint with tests" → MUST invoke `/tdd`
-- "Find where errors are handled" → MUST invoke `/rlm`
-- "Process all .py files" → MUST invoke `/map-reduce`
-- "Review this security-critical change" → MUST invoke `/maker-checker`
-- "Build, then test, then deploy" → MUST invoke `/dag`
-- "Rename this variable" → No skill matches, proceed directly
+- "Improve this code quality" → RALPH
+- "Add a new endpoint with tests" → TDD
+- "Find where errors are handled" → RLM
+- "Process all .py files" → MAP‑REDUCE
+- "Review this security‑critical change" → MAKER‑CHECKER
+- "Build, then test, then deploy" → DAG
+- "Rename this variable" → no pattern; do it directly
 
 ## Context Limit (100k tokens)
 

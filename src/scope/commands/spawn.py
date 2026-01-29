@@ -290,6 +290,15 @@ def spawn(
             target = f":{window_name}"
         else:
             target = f"{get_scope_session()}:{window_name}"
+
+        # IMPORTANT: invoke /scope as its OWN message so Claude Code executes it
+        # as a command (instead of treating it as plain text inside a larger prompt).
+        try:
+            send_keys(target, "/scope", submit=True, verify=False)
+            time.sleep(0.3)
+        except TmuxError:
+            pass
+
         _send_contract(target, contract)
 
         # If the task is still pending, Enter may not have been delivered.

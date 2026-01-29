@@ -307,9 +307,10 @@ class ScopeApp(App):
             except TmuxError:
                 pass
 
-            # Prefill /scope command (without pressing Enter)
+            # Invoke /scope immediately as its own message.
+            # This is more reliable than embedding /scope inside a larger prompt.
             try:
-                send_keys(pane_id, "/scope ", submit=False)
+                send_keys(pane_id, "/scope", submit=True, verify=False)
             except TmuxError:
                 pass
         except TmuxError as e:
