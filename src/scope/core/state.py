@@ -441,3 +441,40 @@ def has_trajectory(session_id: str) -> bool:
     session_dir = _get_session_dir(scope_dir, session_id)
 
     return (session_dir / "trajectory.jsonl").exists()
+
+
+def save_claude_session_id(session_id: str, claude_uuid: str) -> None:
+    """Save the Claude session UUID for resuming.
+
+    Args:
+        session_id: The scope session ID.
+        claude_uuid: The Claude session UUID (for --resume).
+
+    Raises:
+        FileNotFoundError: If session doesn't exist.
+    """
+    scope_dir = _get_scope_dir()
+    session_dir = _get_session_dir(scope_dir, session_id)
+
+    if not session_dir.exists():
+        raise FileNotFoundError(f"Session {session_id} not found")
+
+    (session_dir / "claude_session_id").write_text(claude_uuid)
+
+
+def load_claude_session_id(session_id: str) -> str | None:
+    """Load the Claude session UUID for resuming.
+
+    Args:
+        session_id: The scope session ID.
+
+    Returns:
+        The Claude session UUID if available, None otherwise.
+    """
+    scope_dir = _get_scope_dir()
+    session_dir = _get_session_dir(scope_dir, session_id)
+
+    claude_session_file = session_dir / "claude_session_id"
+    if claude_session_file.exists():
+        return claude_session_file.read_text().strip()
+    return None

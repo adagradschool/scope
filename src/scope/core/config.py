@@ -73,3 +73,32 @@ def write_all_versions(versions: dict[str, str]) -> None:
     config = read_config()
     config["setup_versions"] = versions
     write_config(config)
+
+
+DEFAULT_MAX_COMPLETED_SESSIONS = 5
+
+
+def get_max_completed_sessions() -> int:
+    """Get the maximum number of completed sessions to keep in memory.
+
+    Completed sessions beyond this limit will be evicted (tmux window killed)
+    but their data will be preserved on disk for resumption.
+
+    Returns:
+        The max completed sessions limit (default: 5).
+    """
+    config = read_config()
+    return config.get("max_completed_sessions", DEFAULT_MAX_COMPLETED_SESSIONS)
+
+
+def set_max_completed_sessions(n: int) -> None:
+    """Set the maximum number of completed sessions to keep in memory.
+
+    Args:
+        n: The new limit (must be >= 0).
+    """
+    if n < 0:
+        raise ValueError("max_completed_sessions must be >= 0")
+    config = read_config()
+    config["max_completed_sessions"] = n
+    write_config(config)

@@ -142,3 +142,46 @@ def test_poll_child_session(runner, mock_scope_base):
     assert result.exit_code == 0
     data = orjson.loads(result.output)
     assert data["status"] == "running"
+
+
+def test_poll_evicted_session(runner, mock_scope_base):
+    """Test poll returns status for evicted session."""
+    session = Session(
+        id="0",
+        task="Test task",
+        parent="",
+        state="evicted",
+        tmux_session="scope-0",
+        created_at=datetime.now(timezone.utc),
+    )
+    save_session(session)
+
+    result = runner.invoke(main, ["poll", "0"])
+
+    assert result.exit_code == 0
+    data = orjson.loads(result.output)
+    assert data["status"] == "evicted"
+
+
+def test_poll_evicted_activity_past_tense(runner, mock_scope_base):
+    """Test poll converts activity to past tense for evicted session."""
+    session = Session(
+        id="0",
+        task="Test task",
+        parent="",
+        state="evicted",
+        tmux_session="scope-0",
+        created_at=datetime.now(timezone.utc),
+    )
+    save_session(session)
+
+    # Write activity file with present tense
+    activity_file = mock_scope_base / "sessions" / "0" / "activity"
+    activity_file.write_text("reading src/auth.ts")
+
+    result = runner.invoke(main, ["poll", "0"])
+
+    assert result.exit_code == 0
+    data = orjson.loads(result.output)
+    assert data["status"] == "evicted"
+    assert data["activity"] == "read src/auth.ts"

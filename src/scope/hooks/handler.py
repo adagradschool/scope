@@ -422,6 +422,38 @@ def copy_trajectory(transcript_path: str, session_dir: Path) -> bool:
     return True
 
 
+def extract_claude_session_id(transcript_path: str) -> str | None:
+    """Extract the Claude sessionId from a transcript JSONL file.
+
+    The sessionId is used for `claude --resume <uuid>` to continue an evicted session.
+
+    Args:
+        transcript_path: Path to the conversation transcript (.jsonl)
+
+    Returns:
+        The Claude session UUID if found, None otherwise.
+    """
+    path = Path(transcript_path).expanduser()
+    if not path.exists():
+        return None
+
+    with path.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = orjson.loads(line)
+                # Look for sessionId field in any entry
+                session_id = entry.get("sessionId")
+                if session_id:
+                    return session_id
+            except (orjson.JSONDecodeError, KeyError, TypeError):
+                continue
+
+    return None
+
+
 @main.command()
 def ready() -> None:
     """Handle SessionStart hook - signal that Claude Code is ready to receive input."""
@@ -611,9 +643,25 @@ def stop() -> None:
         # Copy full trajectory and build index
         copy_trajectory(transcript_path, session_dir)
 
+        # Extract and save Claude session UUID for potential resume
+        claude_uuid = extract_claude_session_id(transcript_path)
+        if claude_uuid:
+            claude_session_file = session_dir / "claude_session_id"
+            claude_session_file.write_text(claude_uuid)
+
     # Update state to done
     state_file = session_dir / "state"
     state_file.write_text("done")
+
+    # Add completed session to LRU cache
+    session_id = os.environ.get("SCOPE_SESSION_ID", "")
+    if session_id:
+        from scope.core.lru import add_completed_session, check_and_evict
+        from scope.core.project import get_project_identifier
+
+        project_id = get_project_identifier()
+        add_completed_session(project_id, session_id)
+        check_and_evict()
 
 
 @main.command("pane-died")

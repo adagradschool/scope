@@ -59,7 +59,7 @@ def poll(session_ids: tuple[str, ...], trajectory: bool) -> None:
                 if line.strip():
                     activity = line.strip()
             if activity:
-                if session.state in {"done", "aborted", "exited"}:
+                if session.state in {"done", "aborted", "exited", "evicted"}:
                     activity = past_tense_activity(activity)
                 result["activity"] = activity
 

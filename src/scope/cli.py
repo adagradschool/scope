@@ -13,6 +13,7 @@ import click
 
 from scope.commands.abort import abort
 from scope.commands.poll import poll
+from scope.commands.resume import resume
 from scope.commands.setup import setup as setup_cmd
 from scope.commands.spawn import spawn
 from scope.commands.tk import tk
@@ -127,6 +128,7 @@ def main(
 main.add_command(spawn)
 main.add_command(poll)
 main.add_command(abort)
+main.add_command(resume)
 main.add_command(setup_cmd, name="setup")
 main.add_command(trajectory)
 main.add_command(uninstall)

@@ -16,8 +16,11 @@ from scope.core.state import (
     get_global_scope_base,
     get_root_path,
     load_all,
+    load_claude_session_id,
+    load_session,
     next_id,
     save_session,
+    update_state,
 )
 from scope.core.tmux import (
     TmuxError,
@@ -31,6 +34,7 @@ from scope.core.tmux import (
     get_scope_session,
     get_right_pane_session_id,
     has_window,
+    has_window_in_session,
     in_tmux,
     detach_client,
     pane_target_for_window,
@@ -318,6 +322,7 @@ class ScopeApp(App):
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Handle row selection (enter key) to attach to session in split pane."""
+
         # Check if we're running inside tmux
         if not in_tmux():
             self.notify("Not running inside tmux", severity="error")
@@ -333,9 +338,20 @@ class ScopeApp(App):
         session_id = str(event.row_key.value)
         window_name = tmux_window_name(session_id)
 
+        # Load session to check state
+        session = load_session(session_id)
+        if session is None:
+            self.notify(f"Session {session_id} not found", severity="error")
+            return
+
+        # Handle evicted sessions - resume them
+        if session.state == "evicted":
+            self._resume_evicted_session(session_id, window_name, current_pane_id)
+            return
+
         # Check if window exists
         if not has_window(window_name):
-            self.notify(f"Session {session_id} not found", severity="error")
+            self.notify(f"Session {session_id} window not found", severity="error")
             return
 
         # Join the pane into current window
@@ -354,6 +370,89 @@ class ScopeApp(App):
                     pass
         except TmuxError as e:
             self.notify(f"Failed to attach: {e}", severity="error")
+
+    def _resume_evicted_session(
+        self, session_id: str, window_name: str, current_pane_id: str | None
+    ) -> None:
+        """Resume an evicted session by spawning a new tmux window with claude --resume."""
+        import shlex
+
+        from scope.core.lru import remove_session
+        from scope.core.project import get_project_identifier
+
+        # Load Claude session UUID
+        claude_uuid = load_claude_session_id(session_id)
+        if not claude_uuid:
+            self.notify(
+                f"Cannot resume {session_id}: no Claude session UUID saved",
+                severity="error",
+            )
+            return
+
+        # Check if tmux window already exists (shouldn't, but check anyway)
+        tmux_session = get_scope_session()
+        if has_window_in_session(tmux_session, window_name):
+            self.notify(f"Window {window_name} already exists", severity="error")
+            return
+
+        try:
+            # Build command to resume Claude session
+            command = f"claude --resume {shlex.quote(claude_uuid)}"
+            if self._dangerously_skip_permissions:
+                command += " --dangerously-skip-permissions"
+
+            # Build environment for resumed session
+            env = {"SCOPE_SESSION_ID": session_id}
+            if self._dangerously_skip_permissions:
+                env["SCOPE_DANGEROUSLY_SKIP_PERMISSIONS"] = "1"
+
+            # Create the tmux window
+            create_window(
+                name=window_name,
+                command=command,
+                cwd=Path.cwd(),
+                env=env,
+            )
+
+            # Set pane option for session tracking
+            try:
+                set_pane_option(
+                    pane_target_for_window(window_name),
+                    "@scope_session_id",
+                    session_id,
+                )
+            except TmuxError:
+                pass
+
+            # Ensure tmux hooks are installed
+            install_tmux_hooks()
+
+            # Update session state to running
+            update_state(session_id, "running")
+
+            # Remove from LRU cache since it's now running
+            project_id = get_project_identifier()
+            remove_session(project_id, session_id)
+
+            # Join the pane into current window
+            pane_id = attach_in_split(window_name)
+            self._attached_pane_id = pane_id
+            self._attached_window_name = window_name
+            try:
+                set_pane_option(pane_id, "@scope_session_id", session_id)
+            except TmuxError:
+                pass
+            if current_pane_id:
+                try:
+                    select_pane(current_pane_id)
+                except TmuxError:
+                    pass
+
+            self.refresh_sessions()
+            self.notify(f"Resumed session {session_id}")
+
+        except TmuxError as e:
+            self.notify(f"Failed to resume: {e}", severity="error")
 
     def action_detach(self) -> None:
         """Detach the currently attached pane back to its own window."""

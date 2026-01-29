@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 
-VALID_STATES = {"pending", "running", "done", "aborted", "failed", "exited"}
+VALID_STATES = {"pending", "running", "done", "aborted", "failed", "exited", "evicted"}
 
 
 @dataclass
@@ -14,7 +14,7 @@ class Session:
         id: Flat dotted notation (e.g., "0", "0.1", "0.1.2")
         task: One-line description of the task
         parent: Parent session ID (empty string for root sessions)
-        state: Session state - one of "pending", "running", "done", "aborted", "failed", "exited"
+        state: Session state - one of "pending", "running", "done", "aborted", "failed", "exited", "evicted"
         tmux_session: tmux session name (format: "scope-{id}")
         created_at: Timestamp when session was created
         alias: Human-readable alias for the session (optional)

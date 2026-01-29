@@ -246,6 +246,11 @@ def spawn(
         # Now that window exists, save session to filesystem
         save_session(session)
 
+        # Check LRU cache and evict oldest completed sessions if over limit
+        from scope.core.lru import check_and_evict
+
+        check_and_evict()
+
         # Generate and save contract
         scope_dir = ensure_scope_dir()
         session_dir = scope_dir / "sessions" / session_id
