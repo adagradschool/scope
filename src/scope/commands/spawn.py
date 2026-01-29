@@ -10,12 +10,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import click
+from watchfiles import watch
 
 from scope.core.contract import generate_contract
 from scope.core.dag import detect_cycle
 from scope.core.session import Session
 from scope.core.state import (
     ensure_scope_dir,
+    load_session,
     load_session_by_alias,
     next_id,
     resolve_id,
@@ -36,6 +38,62 @@ from scope.hooks.install import install_tmux_hooks
 # Placeholder task - will be inferred from first prompt via hooks
 PENDING_TASK = "(pending...)"
 CONTRACT_CHUNK_SIZE = 2000
+TERMINAL_STATES = {"done", "aborted", "failed", "exited"}
+
+
+def _wait_for_sessions(session_ids: list[str]) -> None:
+    """Block until all given sessions reach a terminal state."""
+    scope_dir = ensure_scope_dir()
+    pending: dict[str, Path] = {}
+    for sid in session_ids:
+        session = load_session(sid)
+        if session is None:
+            continue
+        if session.state in TERMINAL_STATES:
+            continue
+        pending[sid] = scope_dir / "sessions" / sid
+
+    if not pending:
+        return
+
+    watch_paths = list(pending.values())
+    for changes in watch(*watch_paths):
+        for _, changed_path in changes:
+            changed_path = Path(changed_path)
+            if changed_path.name == "state":
+                sid = changed_path.parent.name
+                if sid in pending:
+                    session = load_session(sid)
+                    if session and session.state in TERMINAL_STATES:
+                        del pending[sid]
+        if not pending:
+            return
+
+
+def _collect_piped_results(session_ids: list[str]) -> list[str]:
+    """Collect result text from completed sessions.
+
+    Each result is prefixed with attribution so the child session
+    knows where the content came from.
+
+    Returns:
+        List of formatted result strings, one per session with a result file.
+    """
+    scope_dir = ensure_scope_dir()
+    results: list[str] = []
+    for sid in session_ids:
+        result_file = scope_dir / "sessions" / sid / "result"
+        if result_file.exists():
+            text = result_file.read_text().strip()
+            if text:
+                session = load_session(sid)
+                label = sid
+                if session and session.alias:
+                    label = f"{session.alias} ({sid})"
+                results.append(
+                    f"The previous session [{label}] produced:\n\n{text}"
+                )
+    return results
 
 
 def _task_still_pending(task_path: Path) -> bool:
@@ -86,6 +144,12 @@ def _send_contract(target: str, contract: str) -> None:
     help="Comma-separated list of session IDs or aliases this session depends on",
 )
 @click.option(
+    "--pipe",
+    "pipe",
+    default="",
+    help="Comma-separated session IDs/aliases to pipe results from (implies --after)",
+)
+@click.option(
     "--plan",
     is_flag=True,
     help="Start Claude in plan mode",
@@ -107,6 +171,7 @@ def spawn(
     prompt: str,
     alias: str,
     after: str,
+    pipe: str,
     plan: bool,
     model: str,
     dangerously_skip_permissions: bool,
@@ -161,6 +226,35 @@ def spawn(
                 )
                 raise SystemExit(1)
             depends_on.append(resolved)
+
+    # Parse and resolve piped sessions (--pipe implies --after)
+    pipe_ids: list[str] = []
+    if pipe:
+        for dep_ref in pipe.split(","):
+            dep_ref = dep_ref.strip()
+            if not dep_ref:
+                continue
+            resolved = resolve_id(dep_ref)
+            if resolved is None:
+                click.echo(
+                    f"Error: piped session '{dep_ref}' not found\n"
+                    f"  Cause: '{dep_ref}' is not a valid session ID or alias.\n"
+                    f"  Fix: List available sessions and use a valid ID or alias:\n"
+                    f"    scope list\n"
+                    f'    scope spawn --pipe <session-id> "your prompt here"',
+                    err=True,
+                )
+                raise SystemExit(1)
+            pipe_ids.append(resolved)
+            # --pipe implies --after: add to depends_on if not already present
+            if resolved not in depends_on:
+                depends_on.append(resolved)
+
+    # Wait for piped sessions to complete and collect their results
+    prior_results: list[str] | None = None
+    if pipe_ids:
+        _wait_for_sessions(pipe_ids)
+        prior_results = _collect_piped_results(pipe_ids) or None
 
     # Get parent from environment (for nested sessions)
     parent = os.environ.get("SCOPE_SESSION_ID", "")
@@ -254,7 +348,9 @@ def spawn(
         session_dir = scope_dir / "sessions" / session_id
 
         contract = generate_contract(
-            prompt=prompt, depends_on=depends_on if depends_on else None
+            prompt=prompt,
+            depends_on=depends_on if depends_on else None,
+            prior_results=prior_results,
         )
         (session_dir / "contract.md").write_text(contract)
 
