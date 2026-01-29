@@ -249,24 +249,18 @@ def pattern_reinject() -> None:
     if session_dir is None:
         return
 
-    pattern_file = session_dir / "pattern_name"
-    if not pattern_file.exists():
+    state_file = session_dir / "pattern_state.json"
+    if not state_file.exists():
         return
 
-    pattern = pattern_file.read_text().strip()
+    state = orjson.loads(state_file.read_bytes())
+    pattern = state.get("pattern", "")
     if not pattern:
         return
 
-    import orjson
-
-    phases_file = session_dir / "pattern_phases"
-    phases = orjson.loads(phases_file.read_bytes()) if phases_file.exists() else []
-
-    completed_file = session_dir / "pattern_completed"
-    completed = orjson.loads(completed_file.read_bytes()) if completed_file.exists() else []
-
-    current_file = session_dir / "pattern_current"
-    current = current_file.read_text().strip() if current_file.exists() else ""
+    phases = state.get("phases", [])
+    completed = state.get("completed", [])
+    current = state.get("current", "")
 
     # Build re-injection message
     parts = [f"Pattern: {pattern}."]

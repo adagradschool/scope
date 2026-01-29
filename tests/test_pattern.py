@@ -75,22 +75,19 @@ def session_dir(mock_scope_base):
 
 
 def test_save_pattern_state(session_dir):
-    """Test saving pattern state creates the expected files."""
+    """Test saving pattern state creates a single JSON file."""
     save_pattern_state(
         session_id="0",
         pattern="tdd",
         phases=["red", "green", "refactor"],
     )
 
-    assert (session_dir / "pattern_name").read_text() == "tdd"
-    assert orjson.loads((session_dir / "pattern_phases").read_bytes()) == [
-        "red",
-        "green",
-        "refactor",
-    ]
-    assert orjson.loads((session_dir / "pattern_completed").read_bytes()) == []
+    state = orjson.loads((session_dir / "pattern_state.json").read_bytes())
+    assert state["pattern"] == "tdd"
+    assert state["phases"] == ["red", "green", "refactor"]
+    assert state["completed"] == []
     # Default current should be first phase
-    assert (session_dir / "pattern_current").read_text() == "red"
+    assert state["current"] == "red"
 
 
 def test_save_pattern_state_with_current(session_dir):
@@ -103,8 +100,22 @@ def test_save_pattern_state_with_current(session_dir):
         completed=["red"],
     )
 
-    assert (session_dir / "pattern_current").read_text() == "green"
-    assert orjson.loads((session_dir / "pattern_completed").read_bytes()) == ["red"]
+    state = orjson.loads((session_dir / "pattern_state.json").read_bytes())
+    assert state["current"] == "green"
+    assert state["completed"] == ["red"]
+
+
+def test_save_pattern_state_empty_phases_writes_current(session_dir):
+    """Test saving pattern with empty phases still writes current as empty string."""
+    save_pattern_state(
+        session_id="0",
+        pattern="dag",
+        phases=[],
+    )
+
+    state = orjson.loads((session_dir / "pattern_state.json").read_bytes())
+    assert state["current"] == ""
+    assert state["phases"] == []
 
 
 def test_save_pattern_state_session_not_found(mock_scope_base):
@@ -166,6 +177,21 @@ def test_advance_pattern_phase(session_dir):
     assert state is not None
     assert state["completed"] == ["red", "green", "refactor"]
     assert state["current"] == ""
+
+
+def test_advance_pattern_phase_past_end_returns_none(session_dir):
+    """Test double-advance past the end returns None (all phases already done)."""
+    save_pattern_state(
+        session_id="0",
+        pattern="tdd",
+        phases=["red", "green", "refactor"],
+        completed=["red", "green", "refactor"],
+        current="",
+    )
+
+    # Already at end — advance should return None
+    state = advance_pattern_phase("0")
+    assert state is None
 
 
 def test_advance_pattern_phase_no_pattern(session_dir):
@@ -267,7 +293,7 @@ def test_generate_contract_full_with_pattern():
 
 @pytest.fixture
 def runner():
-    """Click CLI test runner."""
+    """Click CLI test runner (Click 8+ separates stderr by default)."""
     return CliRunner()
 
 
@@ -299,10 +325,10 @@ def test_pattern_reinject_outputs_state(runner, setup_session):
     result = runner.invoke(main, ["pattern-reinject"])
 
     assert result.exit_code == 0
-    assert "[pattern-state]" in result.output
-    assert "Pattern: tdd" in result.output
-    assert "Next: red" in result.output
-    assert "red → green → refactor" in result.output
+    assert "[pattern-state]" in result.stderr
+    assert "Pattern: tdd" in result.stderr
+    assert "Next: red" in result.stderr
+    assert "red → green → refactor" in result.stderr
 
 
 def test_pattern_reinject_shows_completed(runner, setup_session):
@@ -318,8 +344,8 @@ def test_pattern_reinject_shows_completed(runner, setup_session):
     result = runner.invoke(main, ["pattern-reinject"])
 
     assert result.exit_code == 0
-    assert "Completed: red" in result.output
-    assert "Next: green" in result.output
+    assert "Completed: red" in result.stderr
+    assert "Next: green" in result.stderr
 
 
 def test_pattern_reinject_all_complete(runner, setup_session):
@@ -335,7 +361,7 @@ def test_pattern_reinject_all_complete(runner, setup_session):
     result = runner.invoke(main, ["pattern-reinject"])
 
     assert result.exit_code == 0
-    assert "All phases complete" in result.output
+    assert "All phases complete" in result.stderr
 
 
 def test_pattern_reinject_no_pattern(runner, setup_session):
@@ -344,6 +370,7 @@ def test_pattern_reinject_no_pattern(runner, setup_session):
 
     assert result.exit_code == 0
     assert result.output == ""
+    assert result.stderr == ""
 
 
 def test_pattern_reinject_no_session(runner, mock_scope_base, monkeypatch):
@@ -354,6 +381,7 @@ def test_pattern_reinject_no_session(runner, mock_scope_base, monkeypatch):
 
     assert result.exit_code == 0
     assert result.output == ""
+    assert result.stderr == ""
 
 
 def test_pattern_reinject_includes_deviation_reminder(runner, setup_session):
@@ -367,7 +395,7 @@ def test_pattern_reinject_includes_deviation_reminder(runner, setup_session):
     result = runner.invoke(main, ["pattern-reinject"])
 
     assert result.exit_code == 0
-    assert "deviate" in result.output.lower()
+    assert "deviate" in result.stderr.lower()
 
 
 # --- Commit command tests ---
@@ -409,6 +437,28 @@ def test_commit_command_no_session(runner, mock_scope_base, monkeypatch):
 
     assert result.exit_code == 1
     assert "not in a scope session" in result.output.lower()
+
+
+def test_commit_overwrite_pattern_is_intended(runner, setup_session, monkeypatch):
+    """Test committing tdd then ralph replaces state cleanly (overwrite is intended)."""
+    from scope.commands.commit import commit
+
+    result = runner.invoke(commit, ["tdd"])
+    assert result.exit_code == 0
+
+    state = load_pattern_state("0")
+    assert state["pattern"] == "tdd"
+    assert state["phases"] == ["red", "green", "refactor"]
+
+    # Overwrite with ralph
+    result = runner.invoke(commit, ["ralph"])
+    assert result.exit_code == 0
+
+    state = load_pattern_state("0")
+    assert state["pattern"] == "ralph"
+    assert state["phases"] == ["critique", "improve"]
+    assert state["completed"] == []
+    assert state["current"] == "critique"
 
 
 def test_commit_command_case_insensitive(runner, setup_session, monkeypatch):

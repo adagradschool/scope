@@ -452,6 +452,8 @@ def save_pattern_state(
 ) -> None:
     """Save pattern commitment state for a session.
 
+    Writes a single pattern_state.json atomically (write to temp, rename).
+
     Args:
         session_id: The session ID.
         pattern: Pattern name (e.g., "tdd", "ralph").
@@ -462,6 +464,8 @@ def save_pattern_state(
     Raises:
         FileNotFoundError: If session doesn't exist.
     """
+    import tempfile
+
     import orjson
 
     scope_dir = _get_scope_dir()
@@ -470,15 +474,29 @@ def save_pattern_state(
     if not session_dir.exists():
         raise FileNotFoundError(f"Session {session_id} not found")
 
-    (session_dir / "pattern_name").write_text(pattern)
-    (session_dir / "pattern_phases").write_bytes(orjson.dumps(phases))
-    (session_dir / "pattern_completed").write_bytes(
-        orjson.dumps(completed or [])
-    )
     if current is not None:
-        (session_dir / "pattern_current").write_text(current)
+        resolved_current = current
     elif phases:
-        (session_dir / "pattern_current").write_text(phases[0])
+        resolved_current = phases[0]
+    else:
+        resolved_current = ""
+
+    state = {
+        "pattern": pattern,
+        "phases": phases,
+        "completed": completed or [],
+        "current": resolved_current,
+    }
+
+    target = session_dir / "pattern_state.json"
+    fd, tmp_path = tempfile.mkstemp(dir=session_dir, suffix=".tmp")
+    try:
+        with open(fd, "wb") as f:
+            f.write(orjson.dumps(state))
+        Path(tmp_path).rename(target)
+    except BaseException:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
 
 
 def load_pattern_state(session_id: str) -> dict | None:
@@ -496,29 +514,15 @@ def load_pattern_state(session_id: str) -> dict | None:
     scope_dir = _get_scope_dir()
     session_dir = _get_session_dir(scope_dir, session_id)
 
-    pattern_file = session_dir / "pattern_name"
-    if not pattern_file.exists():
+    state_file = session_dir / "pattern_state.json"
+    if not state_file.exists():
         return None
 
-    pattern = pattern_file.read_text().strip()
-    if not pattern:
+    state = orjson.loads(state_file.read_bytes())
+    if not state.get("pattern"):
         return None
 
-    phases_file = session_dir / "pattern_phases"
-    phases = orjson.loads(phases_file.read_bytes()) if phases_file.exists() else []
-
-    completed_file = session_dir / "pattern_completed"
-    completed = orjson.loads(completed_file.read_bytes()) if completed_file.exists() else []
-
-    current_file = session_dir / "pattern_current"
-    current = current_file.read_text().strip() if current_file.exists() else ""
-
-    return {
-        "pattern": pattern,
-        "phases": phases,
-        "completed": completed,
-        "current": current,
-    }
+    return state
 
 
 def advance_pattern_phase(session_id: str) -> dict | None:
@@ -532,17 +536,19 @@ def advance_pattern_phase(session_id: str) -> dict | None:
     Returns:
         Updated pattern state dict, or None if no pattern or already at end.
     """
-    import orjson
-
     state = load_pattern_state(session_id)
     if state is None:
         return None
 
     current = state["current"]
     phases = state["phases"]
-    completed = state["completed"]
+    completed = list(state["completed"])
 
-    if current and current not in completed:
+    # Already at end — nothing to advance
+    if not current:
+        return None
+
+    if current not in completed:
         completed.append(current)
 
     # Find next phase
@@ -552,11 +558,13 @@ def advance_pattern_phase(session_id: str) -> dict | None:
             next_phase = phase
             break
 
-    scope_dir = _get_scope_dir()
-    session_dir = _get_session_dir(scope_dir, session_id)
-
-    (session_dir / "pattern_completed").write_bytes(orjson.dumps(completed))
-    (session_dir / "pattern_current").write_text(next_phase)
+    save_pattern_state(
+        session_id=session_id,
+        pattern=state["pattern"],
+        phases=phases,
+        completed=completed,
+        current=next_phase,
+    )
 
     return {
         "pattern": state["pattern"],

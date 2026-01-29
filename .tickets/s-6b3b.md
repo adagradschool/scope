@@ -1,6 +1,6 @@
 ---
 id: s-6b3b
-status: open
+status: closed
 deps: [s-2bfe]
 links: []
 created: 2026-01-29T19:17:04Z
