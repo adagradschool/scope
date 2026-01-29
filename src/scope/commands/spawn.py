@@ -215,8 +215,6 @@ def spawn(
         env = {"SCOPE_SESSION_ID": session_id}
         if dangerously_skip_permissions:
             env["SCOPE_DANGEROUSLY_SKIP_PERMISSIONS"] = "1"
-        tickets_dir = ensure_scope_dir() / "sessions" / session_id / ".tickets"
-        env["TICKETS_DIR"] = str(tickets_dir)
         if path := os.environ.get("PATH"):
             env["PATH"] = path
         for key, value in os.environ.items():

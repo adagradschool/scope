@@ -1,7 +1,5 @@
 """Tests for scope setup command."""
 
-from types import SimpleNamespace
-
 import pytest
 from click.testing import CliRunner
 
@@ -14,39 +12,27 @@ def runner():
     return CliRunner()
 
 
-def test_setup_installs_tk_on_darwin(runner, monkeypatch):
-    """Test setup installs tk via brew on macOS when missing."""
+def test_setup_runs_install(runner, monkeypatch):
+    """Test setup runs ensure_setup when tmux is installed."""
     monkeypatch.setattr("scope.commands.setup.tmux_is_installed", lambda: True)
-    monkeypatch.setattr("scope.commands.setup.ensure_setup", lambda **_kwargs: None)
     monkeypatch.setattr("scope.commands.setup.platform.system", lambda: "Darwin")
-    monkeypatch.setattr("scope.commands.setup.shutil.which", lambda _name: None)
 
-    captured = {}
+    called = {"count": 0}
 
-    def fake_run(args):
-        captured["args"] = args
-        return SimpleNamespace(returncode=0)
+    def fake_ensure_setup(**_kwargs):
+        called["count"] += 1
 
-    monkeypatch.setattr("scope.commands.setup.subprocess.run", fake_run)
+    monkeypatch.setattr("scope.commands.setup.ensure_setup", fake_ensure_setup)
 
     result = runner.invoke(setup_cmd)
     assert result.exit_code == 0
-    assert captured["args"] == ["brew", "install", "ticket"]
+    assert called["count"] == 1
 
 
-def test_setup_no_brew_when_tk_present(runner, monkeypatch):
-    """Test setup skips brew install when tk is already present."""
-    monkeypatch.setattr("scope.commands.setup.tmux_is_installed", lambda: True)
-    monkeypatch.setattr("scope.commands.setup.ensure_setup", lambda **_kwargs: None)
-    monkeypatch.setattr("scope.commands.setup.platform.system", lambda: "Darwin")
-    monkeypatch.setattr(
-        "scope.commands.setup.shutil.which", lambda _name: "/opt/homebrew/bin/tk"
-    )
-
-    def fake_run(_args):
-        raise AssertionError("brew should not be invoked when tk exists")
-
-    monkeypatch.setattr("scope.commands.setup.subprocess.run", fake_run)
+def test_setup_errors_when_tmux_missing(runner, monkeypatch):
+    """Test setup errors when tmux is not installed."""
+    monkeypatch.setattr("scope.commands.setup.tmux_is_installed", lambda: False)
+    monkeypatch.setattr("scope.commands.setup.platform.system", lambda: "Linux")
 
     result = runner.invoke(setup_cmd)
-    assert result.exit_code == 0
+    assert result.exit_code == 1
