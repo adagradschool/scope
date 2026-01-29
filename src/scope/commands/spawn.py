@@ -165,6 +165,13 @@ def _send_contract(target: str, contract: str) -> None:
     envvar="SCOPE_DANGEROUSLY_SKIP_PERMISSIONS",
     help="Pass --dangerously-skip-permissions to spawned Claude instance",
 )
+@click.option(
+    "--verify",
+    "verify_spec",
+    default="",
+    help="Comma-separated verification criteria. Can be commands or natural language. "
+    'Example: --verify "pytest tests/,ruff check,all types pass"',
+)
 @click.pass_context
 def spawn(
     ctx: click.Context,
@@ -175,6 +182,7 @@ def spawn(
     plan: bool,
     model: str,
     dangerously_skip_permissions: bool,
+    verify_spec: str,
 ) -> None:
     """Spawn a new scope session.
 
@@ -206,6 +214,11 @@ def spawn(
                 err=True,
             )
             raise SystemExit(1)
+
+    # Parse verify criteria
+    verify_criteria: list[str] | None = None
+    if verify_spec:
+        verify_criteria = [c.strip() for c in verify_spec.split(",") if c.strip()]
 
     # Parse and resolve dependencies
     depends_on: list[str] = []
@@ -351,6 +364,7 @@ def spawn(
             prompt=prompt,
             depends_on=depends_on if depends_on else None,
             prior_results=prior_results,
+            verify=verify_criteria,
         )
         (session_dir / "contract.md").write_text(contract)
 

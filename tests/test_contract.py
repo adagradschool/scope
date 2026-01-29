@@ -298,3 +298,70 @@ def test_generate_contract_parent_intent_and_prior_results():
     assert "# Prior Results" in contract
     assert "# Task" in contract
     assert contract.index("# Parent Intent") < contract.index("# Prior Results") < contract.index("# Task")
+
+
+# --- Verification tests ---
+
+
+def test_generate_contract_with_verify():
+    """Test contract includes verification criteria."""
+    contract = generate_contract(
+        prompt="Implement feature",
+        verify=["pytest tests/", "ruff check", "all types pass"],
+    )
+
+    assert "# Verification" in contract
+    assert "verified against these criteria" in contract
+    assert "- pytest tests/" in contract
+    assert "- ruff check" in contract
+    assert "- all types pass" in contract
+
+
+def test_generate_contract_verify_after_file_scope():
+    """Test verification section comes after file scope."""
+    contract = generate_contract(
+        prompt="Do work",
+        file_scope=["src/"],
+        verify=["pytest"],
+    )
+
+    assert "# File Scope" in contract
+    assert "# Verification" in contract
+    assert contract.index("# File Scope") < contract.index("# Verification")
+
+
+def test_generate_contract_verify_none():
+    """Test no verification section when None."""
+    contract = generate_contract(prompt="Do work", verify=None)
+
+    assert "# Verification" not in contract
+
+
+def test_generate_contract_verify_empty():
+    """Test no verification section when empty list."""
+    contract = generate_contract(prompt="Do work", verify=[])
+
+    assert "# Verification" not in contract
+
+
+def test_generate_contract_full_with_verify():
+    """Test all sections including verify appear in correct order."""
+    contract = generate_contract(
+        prompt="Implement feature",
+        depends_on=["0.0"],
+        phase="GREEN",
+        parent_intent="Build the auth system",
+        prior_results=["Previous research completed."],
+        file_scope=["src/auth/"],
+        verify=["pytest"],
+    )
+
+    deps_idx = contract.index("# Dependencies")
+    phase_idx = contract.index("# Phase")
+    intent_idx = contract.index("# Parent Intent")
+    results_idx = contract.index("# Prior Results")
+    task_idx = contract.index("# Task")
+    scope_idx = contract.index("# File Scope")
+    verify_idx = contract.index("# Verification")
+
+    assert deps_idx < phase_idx < intent_idx < results_idx < task_idx < scope_idx < verify_idx
