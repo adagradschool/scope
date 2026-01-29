@@ -236,6 +236,60 @@ def task() -> None:
     task_file.write_text(summary)
 
 
+@main.command("pattern-reinject")
+def pattern_reinject() -> None:
+    """Handle UserPromptSubmit hook - re-inject pattern state into agent context.
+
+    When an agent is committed to a pattern (TDD, RALPH, etc.), this hook
+    outputs the current pattern state to stderr after each prompt submission.
+    This ensures the agent stays aware of its pattern commitment even as
+    context grows.
+    """
+    session_dir = get_session_dir()
+    if session_dir is None:
+        return
+
+    pattern_file = session_dir / "pattern_name"
+    if not pattern_file.exists():
+        return
+
+    pattern = pattern_file.read_text().strip()
+    if not pattern:
+        return
+
+    import orjson
+
+    phases_file = session_dir / "pattern_phases"
+    phases = orjson.loads(phases_file.read_bytes()) if phases_file.exists() else []
+
+    completed_file = session_dir / "pattern_completed"
+    completed = orjson.loads(completed_file.read_bytes()) if completed_file.exists() else []
+
+    current_file = session_dir / "pattern_current"
+    current = current_file.read_text().strip() if current_file.exists() else ""
+
+    # Build re-injection message
+    parts = [f"Pattern: {pattern}."]
+
+    if completed:
+        parts.append(f"Completed: {', '.join(completed)}.")
+
+    if current:
+        parts.append(f"Next: {current}.")
+    elif phases and len(completed) >= len(phases):
+        parts.append("All phases complete.")
+
+    if phases:
+        parts.append(f"Phases: {' → '.join(phases)}.")
+
+    parts.append(
+        "If you need to deviate from this pattern, state why explicitly."
+    )
+
+    message = " ".join(parts)
+    click.echo(f"[pattern-state] {message}", err=True)
+
+
 def extract_final_response(transcript_path: str) -> str | None:
     """Extract the final assistant response from a transcript JSONL file.
 
