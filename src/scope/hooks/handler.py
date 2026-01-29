@@ -276,9 +276,7 @@ def pattern_reinject() -> None:
     if phases:
         parts.append(f"Phases: {' → '.join(phases)}.")
 
-    parts.append(
-        "If you need to deviate from this pattern, state why explicitly."
-    )
+    parts.append("If you need to deviate from this pattern, state why explicitly.")
 
     message = " ".join(parts)
     click.echo(f"[pattern-state] {message}", err=True)
