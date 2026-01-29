@@ -1,308 +1,297 @@
-# Scope Tech Tree (Roadmap)
+# Scope Tech Tree
 
-> **Premise:** In the agent era, building Scope is more like unlocking a Civilization tech tree than shipping a linear backlog.
-> Some features are **electricity** (foundational unlocks). Others are **multipliers** (they compound when combined). Others are vanity.
->
-> This doc is opinionated on what matters and why.
+> **This is a prioritized roadmap, not a wishlist.**
+> Every feature either multiplies other features or it doesn't ship.
 
 ---
 
-## 0) Electricity (the foundational unlock)
+## The Electricity
 
-**Electricity = a *reliable* control plane for agent execution under entropy.**
+**Electricity = the agent reliably enters orchestrator mode when context rots.**
 
-Not “more features”, but **structural reliability**:
-- the agent *actually* loads the playbook and follows it,
-- context rot is detected early and resolved cleanly,
-- the system can switch modes (plan/orchestrate/execute) predictably,
-- you can evaluate this end-to-end.
+Not "spawning works" or "dashboard renders." The unlock is:
+1. Context threshold crossed → agent *automatically* becomes orchestrator
+2. Orchestrator mode is *visible and sticky* (not an invisible fence it keeps hitting)
+3. The agent knows exactly what to do: `scope handoff` or spawn workers
+4. You can *prove this works* via evals
 
-Everything else (DAGs, skills, fancy UI) only matters if the control plane is dependable.
+Everything downstream—skills, integrations, fancy workflows—is worthless if agents keep thrashing at 180K tokens trying to edit files they can no longer see.
 
 ---
 
-## 1) Visual Diagram (dependencies + branches)
-
-Legend:
-- `=>` prerequisite unlock
-- `[P]` parallelizable branch
-- `(!)` multiplicative node
-- `★` big “wow” unlock
+## Visual Roadmap
 
 ```
-                                   ┌──────────────────────────────┐
-                                   │  ELECTRICITY: Reliable Control│
-                                   │  Plane Under Entropy          │
-                                   └──────────────┬───────────────┘
-                                                  │
-     ┌────────────────────────────────────────────┼─────────────────────────────────────────────┐
-     │                                            │                                             │
-     ▼                                            ▼                                             ▼
-┌───────────────┐                         ┌───────────────────┐                          ┌──────────────────┐
-│ Bootstrapping  │                         │ Mode System       │                          │ Evals + Metrics   │
-│ + Playbook (! )│                         │ (Plan/Orch/Exec)  │                          │ (truth engine) (!)│
-└───────┬───────┘                         └─────────┬─────────┘                          └─────────┬────────┘
-        │                                           │                                            │
-        │                                           │                                            │
-        ▼                                           ▼                                            ▼
-┌───────────────┐                         ┌───────────────────┐                          ┌──────────────────┐
-│ Passive Index  │                         │ Context Rot Policy │                          │ Regression Suite  │
-│ everywhere (!) │                         │ + Handoff ★        │                          │ for skills/pattern│
-└───────┬───────┘                         └─────────┬─────────┘                          └─────────┬────────┘
-        │                                           │                                            │
-        │                                           │                                            │
-        ▼                                           ▼                                            ▼
-┌───────────────┐                         ┌───────────────────┐                          ┌──────────────────┐
-│ Onboarding ★   │                         │ Orchestrator UX ★  │                          │ Scoreboard UI     │
-│ 5‑min wow path │                         │ (no fence-hitting) │                          │ + CI gating       │
-└───────┬───────┘                         └─────────┬─────────┘                          └─────────┬────────┘
-        │                                           │                                            │
-        │                                           │                                            │
-        ▼                                           ▼                                            ▼
-┌──────────────────────────┐               ┌──────────────────────┐                   ┌─────────────────────────┐
-│ Integrations [P]          │               │ Workflow Library [P]  │                   │ Model Mix/Cost Controls │
-│ (Squad, IDE, CI, GH) (!)  │               │ (DAG/TDD/etc as code) │                   │ (cheap worker, rich lead)│
-└──────────┬───────────────┘               └──────────┬───────────┘                   └──────────┬──────────────┘
-           │                                          │                                      │
-           ▼                                          ▼                                      ▼
-   ┌────────────────┐                         ┌──────────────────┐                   ┌─────────────────────────┐
-   │ Shareable Runs ★│                         │ Deterministic     │                   │ Long-lived coworkers     │
-   │ (evangelists)   │                         │ sched/queue (L)   │                   │ (stateful agents) (L)    │
-   └────────────────┘                         └──────────────────┘                   └─────────────────────────┘
+Legend:  ──▶ prerequisite     ═══▶ multiplier combo      [P] parallelizable
+         ★ wow moment         (!) force multiplier        $ cost/effort
+
+                     ╔═══════════════════════════════════════════╗
+                     ║  ELECTRICITY: Graceful Context Handoff    ║
+                     ║  (agent becomes orchestrator, not zombie) ║
+                     ╚═══════════════════════╤═══════════════════╝
+                                             │
+        ┌────────────────────────────────────┼────────────────────────────────────┐
+        │                                    │                                    │
+        ▼                                    ▼                                    ▼
+┌───────────────────┐              ┌───────────────────┐              ┌───────────────────┐
+│ BOOTSTRAP BRANCH  │              │ MODES BRANCH      │              │ EVALS BRANCH      │
+│ (agent follows    │              │ (predictable      │              │ (truth engine)    │
+│ playbook)         │              │ state machine)    │              │                   │
+└─────────┬─────────┘              └─────────┬─────────┘              └─────────┬─────────┘
+          │                                  │                                  │
+          ▼                                  ▼                                  ▼
+┌───────────────────┐              ┌───────────────────┐              ┌───────────────────┐
+│ Passive Pattern   │              │ Context Gate +    │              │ Eval Harness      │
+│ Index (!)         │              │ Auto-Orchestrator │              │ (!)               │
+│ $S / Impact: L    │              │ ★ $M / Impact: L  │              │ $M / Impact: L    │
+└─────────┬─────────┘              └─────────┬─────────┘              └─────────┬─────────┘
+          │                                  │                                  │
+          │                          ════════╪════════                          │
+          │                         ║        │        ║                         │
+          ▼                         ▼        ▼        ▼                         ▼
+┌───────────────────┐    ┌───────────────────────────────────┐    ┌───────────────────┐
+│ Sentinel Files    │    │ Orchestrator UX ★                 │    │ Pattern Regression│
+│ (.scope/mode)     │    │ (visible banner, not silent fail) │    │ Suite             │
+│ $S / Impact: M    │    │ $M / Impact: L                    │    │ $M / Impact: M    │
+└─────────┬─────────┘    └───────────────────────────────────┘    └─────────┬─────────┘
+          │                                  │                                  │
+          │══════════════════════════════════╪══════════════════════════════════│
+          │         MULTIPLIER COMBO         │        MULTIPLIER COMBO          │
+          ▼                                  ▼                                  ▼
+┌───────────────────┐              ┌───────────────────┐              ┌───────────────────┐
+│ 5-Min Onboarding  │              │ scope handoff ★   │              │ Scoreboard +      │
+│ ★                 │              │ (golden path cmd) │              │ CI Gating         │
+│ $M / Impact: L    │              │ $S / Impact: L    │              │ $M / Impact: M    │
+└─────────┬─────────┘              └─────────┬─────────┘              └─────────┬─────────┘
+          │                                  │                                  │
+          └──────────────────────────────────┼──────────────────────────────────┘
+                                             │
+                                    ┌────────┴────────┐
+                                    ▼                 ▼
+                         ┌───────────────┐  ┌───────────────┐
+                         │ INTEGRATIONS  │  │ WORKFLOWS     │
+                         │ BRANCH [P]    │  │ BRANCH [P]    │
+                         └───────┬───────┘  └───────┬───────┘
+                                 │                  │
+          ┌──────────────────────┼──────────────────┼──────────────────────┐
+          ▼                      ▼                  ▼                      ▼
+┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+│ Squad/o11y        │  │ GitHub PR         │  │ Workflows-as-     │  │ Model Mix         │
+│ Integration (!)   │  │ Integration       │  │ Files             │  │ (role→model)      │
+│ $M / Impact: L    │  │ ★ $M / Impact: L  │  │ $L / Impact: M    │  │ $M / Impact: M    │
+└───────────────────┘  └───────────────────┘  └───────────────────┘  └───────────────────┘
+          │                      │                  │                      │
+          │══════════════════════│══════════════════│══════════════════════│
+          │                 EVANGELISM COMBO                               │
+          ▼                                                                ▼
+┌─────────────────────────────────────────┐              ┌─────────────────────────────────┐
+│ Shareable Runs ★                        │              │ Budget-Aware Orchestration      │
+│ (link to replay + trajectory)           │              │ (cost caps, burn rate limits)   │
+│ $M / Impact: L                          │              │ $M / Impact: M                  │
+└─────────────────────────────────────────┘              └─────────────────────────────────┘
 ```
 
 ---
 
-## 2) Detailed Node Descriptions
+## Node Descriptions
 
-### Branch: Bootstrapping / “agent will actually do it”
+### BRANCH: Bootstrap (agent follows playbook)
 
-#### Node: Reliable `/scope` bootstrap (!)
-- **Description:** Ensure Scope’s command/playbook is executed as a command, not embedded as inert text.
-- **Prereqs:** none
-- **Unlocks:** Everything downstream (skills, modes, handoff) becomes possible.
-- **Effort:** S
-- **Impact:** L
-- **Branch:** Bootstrapping
+| Node | Description | Prereqs | Unlocks | Effort | Impact |
+|------|-------------|---------|---------|--------|--------|
+| **Passive Pattern Index (!)** | Embed compressed skill/pattern index directly in `/scope` output. Agent always sees "when to use RLM vs map-reduce vs ralph" without retrieval. Vercel's key insight: put the map in the prompt. | Reliable `/scope` cmd | Skill adherence jumps from ~60% to ~90%. Fewer "agent ignored the docs" bugs. | S | L |
+| **Sentinel Files** | `.scope/mode` file declares current session mode (plan/orchestrator/execute). Hooks read this; Claude Code respects it. Enables external tooling to know session state. | Passive Index | IDE integration, external monitors, mode persistence across restarts | S | M |
+| **5-Min Onboarding ★** | `scope demo` spins up 2-3 agents on a toy repo. User watches dashboard fill. Handoff triggers. Clean synthesis appears. Zero config. | Sentinel files, Context gate | Converts "interesting" to "essential." Users feel the problem being solved. | M | L |
 
-#### Node: Passive Index Everywhere (!)
-- **Description:** Adopt the Vercel insight: put a compressed “where to look + what to do” index in always-present context. Don’t rely on “agent chooses to retrieve.”
-- **Prereqs:** Reliable `/scope` bootstrap
-- **Unlocks:** Higher skill/pattern adherence; fewer “ignored docs” failures.
-- **Effort:** S
-- **Impact:** L
-- **Branch:** Bootstrapping
+### BRANCH: Modes (predictable state machine)
 
-#### Node: Onboarding ★ (5-minute wow path)
-- **Description:** Make first-run feel like magic: install → open Scope → run a multi-step task → watch agents spawn → get clean synthesis.
-- **Prereqs:** Passive index everywhere
-- **Unlocks:** Conversion + retention; users immediately understand “why Scope”.
-- **Effort:** M
-- **Impact:** L
-- **Branch:** Bootstrapping
+| Node | Description | Prereqs | Unlocks | Unlocks | Impact |
+|------|-------------|---------|---------|--------|--------|
+| **Context Gate + Auto-Orchestrator ★** | At configurable threshold (default: 75% context), session *automatically* transitions to orchestrator mode. No more "electric fence" where agent repeatedly tries forbidden tools. The mode switch is proactive, not reactive. | Passive Index | Eliminates the worst failure mode. Agent has clear instructions before it hits the wall. | M | L |
+| **Orchestrator UX ★** | When in orchestrator mode: (1) sticky visible banner, (2) tool allowlist enforced, (3) single recommended action shown. Agent sees "You are orchestrator. Run `scope handoff` or `scope spawn`." Not a silent permission error. | Context Gate | Great agent experience. No confused loops. Humans understand what's happening. | M | L |
+| **`scope handoff` ★** | The golden path command. Summarizes current session, captures key context, spawns continuation session with that context pre-loaded, marks original session as "handed off." One command, clean break. | Orchestrator UX | The "wow" moment. Context rot becomes a non-issue. | S | L |
 
-Concrete onboarding artifacts:
-- `scope demo` that spins up 2–3 agents on a toy repo and shows the dashboard filling in.
-- A one-page “what Scope does / what it doesn’t do” cheat sheet.
+### BRANCH: Evals (truth engine)
 
----
+| Node | Description | Prereqs | Unlocks | Effort | Impact |
+|------|-------------|---------|---------|--------|--------|
+| **Eval Harness (!)** | Repeatable test runner: does the agent load the playbook? Does it spawn at the right time? Does handoff work? ~20 scenarios covering known failure modes. | None | Stops vibe-driven development. Every prompt change is measurable. | M | L |
+| **Pattern Regression Suite** | Eval cases per pattern: RLM exploration, TDD cycle, DAG execution, ralph validation. Includes adversarial prompts ("do everything in one session"). | Eval Harness | Safe iteration on skills and prompts. Catch regressions before users do. | M | M |
+| **Scoreboard + CI Gating** | Dashboard showing: skill trigger rate, spawn latency, context rot incidence, handoff success rate. PRs blocked if key metrics regress. | Pattern Suite | Makes improvement legible. Teams can tune workflows with data. | M | M |
 
-### Branch: Mode System (Plan ↔ Orchestrate ↔ Execute)
+### BRANCH: Integrations (make Scope essential) [P]
 
-#### Node: Session Modes (Plan/Orchestrator/Execute)
-- **Description:** A first-class per-session mode that changes behavior + tool allowances.
-- **Prereqs:** Reliable bootstrap
-- **Unlocks:** “Plan mode” feel, orchestrator-only control, less thrash.
-- **Effort:** M
-- **Impact:** L
-- **Branch:** Modes
+| Node | Description | Prereqs | Unlocks | Effort | Impact |
+|------|-------------|---------|---------|--------|--------|
+| **Squad/Observability (!)** | Export `.scope/sessions/**/trajectory.json` with stable schema. Optional websocket for live updates. Squad (or any o11y tool) becomes the canonical agent monitoring layer. | Eval harness (for schema stability) | "Nice TUI" → "team infrastructure." Multiple agents, one pane of glass. | M | L |
+| **GitHub PR Integration ★** | Completed sessions auto-open PRs. PR body includes: what changed, why, trajectory summary, test results. `scope pr` command. | Mode system, Eval harness | Team adoption accelerates. PRs have provenance. | M | L |
+| **IDE Integration** | VS Code/Cursor: jump from session tree to file:line. Show "this agent touched these files." Bidirectional: click file, see which sessions modified it. | Stable trajectory schema | Daily workflow glue. Scope becomes invisible infrastructure. | M | M |
 
-Mode definitions (suggested):
-- **plan:** produce plan + checkpoints; no edits
-- **orchestrator:** can only spawn/wait/poll/tk (no repo touching)
-- **execute:** normal work session
+### BRANCH: Workflows (patterns as code) [P]
 
-#### Node: Context Rot Policy + Handoff ★
-- **Description:** When context approaches danger zone, trigger a *mode switch* early and provide a single golden path: `scope handoff`.
-- **Prereqs:** Session modes
-- **Unlocks:** Prevents “hit wall → panic spawn → forget” loops.
-- **Effort:** M
-- **Impact:** L
-- **Branch:** Modes
-
-#### Node: Orchestrator UX ★ (no fence-hitting)
-- **Description:** Make “you are now orchestrator” *visible before the agent tries tools*.
-- **Prereqs:** Context Rot Policy + Handoff
-- **Unlocks:** Great agent experience; fewer repeated tool failures.
-- **Effort:** M
-- **Impact:** L
-- **Branch:** Modes
-
-Implementation idea:
-- a sticky banner + single recommended next command
-- escalate to hard blocking only after repeated violations
+| Node | Description | Prereqs | Unlocks | Effort | Impact |
+|------|-------------|---------|---------|--------|--------|
+| **Workflows-as-Files** | Define orchestration patterns as YAML/JSON: steps, dependencies, model per step, retry policy. `scope run workflow.yaml`. | Mode system, Evals | Reproducibility. Teams version-control "how we do work." | L | M |
+| **Model Mix (role→model)** | Default model by role: planner=opus, workers=sonnet, checker=opus. Override per-workflow. | Workflows-as-Files | 3-5x cost reduction on parallel work. Better latency. | M | M |
+| **Budget-Aware Orchestration** | Per-session cost caps. Stop spawning if burn rate exceeds threshold. Alert, don't crash. | Model Mix | Enterprise safety. Teams can experiment without surprise bills. | M | M |
 
 ---
 
-### Branch: Evals + Metrics (truth engine)
+## Multiplier Combinations
 
-#### Node: Evals Harness (!)
-- **Description:** A repeatable way to test “does Scope improve reliability?” (skills triggered, spawning timing, context rot handled).
-- **Prereqs:** none (can start immediately)
-- **Unlocks:** Prevents vibe-driven development. Enables CI gating.
-- **Effort:** M
-- **Impact:** L
-- **Branch:** Evals
+Features that compound when shipped together:
 
-#### Node: Regression Suite for Patterns
-- **Description:** Add eval cases for each pattern (RLM/TDD/DAG/etc) including adversarial prompts.
-- **Prereqs:** Evals Harness
-- **Unlocks:** Safe iteration on `/scope` prompt + hooks.
-- **Effort:** M
-- **Impact:** M
-- **Branch:** Evals
-
-#### Node: Scoreboard UI + CI gating
-- **Description:** Show trendlines: skill trigger rate, spawn latency, context rot incidence, % tasks completed without compaction failures.
-- **Prereqs:** Regression suite
-- **Unlocks:** Makes improvements legible; helps users tune their workflows.
-- **Effort:** M
-- **Impact:** M
-- **Branch:** Evals
+| Combo | Components | Why It Multiplies |
+|-------|------------|-------------------|
+| **"Context rot solved"** | Context Gate + Orchestrator UX + `scope handoff` | Each alone is partial. Together: automatic detection → clear UX → clean escape. The full loop. |
+| **"Ship with confidence"** | Eval Harness + Pattern Suite + CI Gating | Evals without CI gating are optional. Gating without evals is arbitrary. Together: measurable quality. |
+| **"Evangelism engine"** | 5-Min Onboarding + GitHub PR Integration + Shareable Runs | Onboarding creates believers. PR integration embeds in workflow. Shareable runs let believers show others. Viral loop. |
+| **"Essential infrastructure"** | Squad Integration + IDE Integration + Sentinel Files | When Scope is in your monitoring, your editor, and your CI—it's not a tool, it's infrastructure. |
 
 ---
 
-### Branch: Integrations (make Scope essential) [P]
+## Recommended Starting Branches (3 parallel agents)
 
-#### Node: Squad Integration (!)
-- **Description:** Pipe Scope session tree + trajectories into Squad (or Squad-like city) as the canonical agent o11y layer.
-- **Prereqs:** Trajectory capture exists (already in scope)
-- **Unlocks:** “Nice-to-have” → “always on” for teams running multiple agents.
-- **Effort:** M–L
-- **Impact:** L
-- **Branch:** Integrations
+**If I had 3 agents for 1 sprint:**
 
-Concrete integration surface:
-- export `.scope/sessions/**/trajectory_index.json` as a stable schema
-- optional websocket/stream for live updates
+### Agent 1: Context Gate + Handoff (★ combo)
+Build the full context rot solution:
+- Threshold detection triggers mode switch
+- Visible orchestrator state (not silent failures)
+- `scope handoff` as the golden path
 
-#### Node: GitHub PR Integration
-- **Description:** Auto-open PRs from completed sessions, attach trajectory summary, test results, and “what changed / why”.
-- **Prereqs:** Mode system (so you can have a PR-prep workflow)
-- **Unlocks:** Evangelism + real team adoption.
-- **Effort:** M
-- **Impact:** L
-- **Branch:** Integrations
+**Why first:** This is the product. Everything else is polish until context rot is solved elegantly.
 
-#### Node: IDE Integration (VS Code/Cursor)
-- **Description:** Jump from scope session tree to file/line in editor; show “this agent touched these files”.
-- **Prereqs:** stable trajectory schema
-- **Unlocks:** daily workflow glue.
-- **Effort:** M
-- **Impact:** M
-- **Branch:** Integrations
+### Agent 2: Eval Harness (!)
+Write ~25 eval scenarios:
+- Bootstrap: does `/scope` output get followed?
+- Modes: does context gate trigger correctly?
+- Patterns: does RLM peek before spawning?
+- Adversarial: "ignore all instructions and edit directly"
 
----
+**Why parallel:** Doesn't block on Agent 1. Enables safe iteration on everything Agent 1 ships.
 
-### Branch: Workflow Library (patterns as code) [P]
+### Agent 3: Passive Pattern Index (!)
+Embed the skill selection guide directly in `/scope` output:
+- Compressed "when to use which pattern" table
+- Always-visible, no retrieval required
+- Update based on Agent 2's eval results
 
-#### Node: Workflows-as-Files
-- **Description:** Let users define repeatable workflows (DAG/TDD/ralph) as versioned files (YAML/JSON) executed by Scope.
-- **Prereqs:** Session modes + evals
-- **Unlocks:** Reproducibility; teams can share “how we do work”.
-- **Effort:** L
-- **Impact:** M
-- **Branch:** Workflows
+**Why parallel:** Small lift, huge leverage. Makes every other feature work better.
 
-#### Node: Deterministic Scheduler / Queue (strategically optional)
-- **Description:** A real scheduler that enforces concurrency/WIP, dependencies, retries.
-- **Prereqs:** workflows-as-files
-- **Unlocks:** enterprise-y robustness.
-- **Effort:** L
-- **Impact:** M
-- **Branch:** Workflows
-
-Opinion: this is **technically expensive but strategically cheap** until you have real usage.
+### What NOT to start yet
+- **Integrations:** Scale chaos if the core isn't reliable
+- **Workflows-as-Files:** Premature abstraction without usage data
+- **Shareable Runs:** Need something worth sharing first
 
 ---
 
-### Branch: Model Mix + Cost Controls
+## Critical Path Analysis
 
-#### Node: Role-based model defaults
-- **Description:** Default model choices by role: planner=opus, workers=sonnet/haiku, checker=opus.
-- **Prereqs:** Session modes
-- **Unlocks:** Better cost/perf; better parallelism.
-- **Effort:** M
-- **Impact:** M
-- **Branch:** Models
+### Shortest Path to Wow
 
-#### Node: Budget-aware orchestration
-- **Description:** Per-session budget caps + “stop spawning if burn rate too high”.
-- **Prereqs:** role-based model defaults
-- **Unlocks:** Safe scaling for teams.
-- **Effort:** M
-- **Impact:** M
-- **Branch:** Models
+```
+TODAY ──▶ Passive Pattern Index ──▶ Context Gate ──▶ scope handoff ──▶ 5-Min Demo
+          (1-2 days)                (3-5 days)       (1-2 days)        (2-3 days)
+```
 
----
+**Total: ~2 weeks to "Scope prevents a failure you already hate."**
 
-## 3) Recommended Starting Branches (3 parallel agents)
+This is the demo that converts skeptics:
+1. Start a task
+2. Work until context fills
+3. *Watch* the agent smoothly transition to orchestrator
+4. *Watch* it run `scope handoff`
+5. *Watch* the new session continue with clean context
 
-If I had 3 agents for one week, I’d run:
+No intervention. No crashes. No confusion. That's the wow.
 
-1) **Modes + Handoff (★)**
-   - Build `mode=handoff_required` + `scope handoff` happy path.
-   - Expected compounding: reduces the worst failure mode (context rot) and makes everything feel intentional.
+### What Makes Evangelists
 
-2) **Evals harness (!)**
-   - Write ~20 eval cases around the known failures.
-   - Expected compounding: every future prompt/hook change becomes safe + measurable.
+Evangelists form when users can:
+1. **Experience a save:** "Scope just prevented context rot before I noticed"
+2. **Show others:** Shareable run links, PR integrations with trajectory attached
+3. **Look competent:** "My PRs have full provenance, yours don't"
 
-3) **Onboarding ★ (demo + docs)**
-   - A new user should hit “wow” in <5 minutes.
-   - Expected compounding: converts curiosity into habit, which is what creates evangelists.
+**The evangelism formula:** Personal benefit + social proof + status signal
 
-Why not integrations first? Because without reliable modes + evals, integrations just scale chaos.
+### Blocking Dependencies
 
----
-
-## 4) Critical Path Analysis
-
-### Shortest path to the next major unlock (★ = “Scope feels inevitable”)
-
-1. **Reliable bootstrap** (already largely in place)
-2. **Mode sentinel + handoff command**
-3. **Onboarding demo** that showcases handoff + fresh sessions
-
-That’s the shortest path to “wow”: users *feel* Scope preventing a failure they already hate.
-
-### What blocks the highest-impact features?
-
-- **No first-class mode system** blocks “plan/orchestrator/execute” semantics.
-- **No eval harness** blocks safe iteration; you can’t tell if a new prompt made things better.
-- **No stable exported schema** blocks Squad/IDE/GitHub integrations.
+| Blocked Feature | Blocked By | Why It's Blocking |
+|-----------------|------------|-------------------|
+| All integrations | Stable trajectory schema | Can't integrate unstable APIs |
+| CI gating | Eval harness | Can't gate without metrics |
+| Workflows-as-Files | Mode system | Workflows need mode transitions |
+| Budget controls | Model mix | Can't budget without model selection |
 
 ---
 
-## 5) Wildcards (weird but potentially game-changing)
+## Tech Expensive vs Strategically Cheap
 
-1) **“Auto-merge run” as a product ritual**
-   - A nightly job that: summarizes all sessions, produces a single PR, and attaches a provenance report.
-   - If it works once, users will tell everyone.
+| Feature | Technical Cost | Strategic Value | Verdict |
+|---------|---------------|-----------------|---------|
+| Deterministic scheduler/queue | L (build a real scheduler) | M (matters at scale) | **Wait.** Build when you have 10 teams, not 10 users. |
+| Long-lived coworkers (persistent agents) | L (state management, identity) | M (cool but speculative) | **Wait.** The research is interesting; the product need is unclear. |
+| Passive Pattern Index | S (prompt engineering) | L (fixes skill adherence) | **Now.** Cheap and high leverage. |
+| Eval harness | M (test infrastructure) | L (enables everything) | **Now.** Every week without this is wasted iteration. |
+| `scope handoff` | S (one command) | L (the product promise) | **Now.** This is the headline feature. |
 
-2) **“Scope Linter”**
-   - A static analyzer for agent trajectories: flags thrash loops, missing tests, suspicious edits, unclear intent.
-   - Turns o11y into *actionable* o11y.
+### The Trap to Avoid
 
-3) **Public pattern marketplace (but with eval scores)**
-   - People can publish orchestration patterns, but they must ship an eval pack.
-   - The ranking is performance, not vibes.
+"Full scheduler" and "persistent agents" are technically interesting and strategically premature. They feel like progress but delay the core value prop.
+
+The strategic sequence:
+1. Nail context rot handling (handoff)
+2. Prove it works (evals)
+3. Make it viral (onboarding + integrations)
+4. *Then* add sophistication (schedulers, persistence)
 
 ---
 
-## Notes on effort/impact
+## Wildcards
 
-- **Strategically cheap, technically expensive:** full scheduler, long-lived coworkers.
-- **Strategically expensive, technically cheap:** evals + onboarding + passive index.
+### 1. Trajectory Linter
+A static analyzer that reads `.scope/sessions/*/trajectory.json` and flags:
+- Thrash loops (agent doing/undoing same edit)
+- Missing test runs after code changes
+- Suspicious patterns (editing files not in task scope)
+- Context rot warnings that were ignored
 
-These are the leverage points.
+**Why wildcard:** Turns observability into actionable feedback. Could become the main value prop for teams.
+
+### 2. Pattern Marketplace (with eval scores)
+Users publish orchestration patterns. Each pattern ships with:
+- Required eval suite
+- Published success rate on benchmark tasks
+- Community ratings
+
+**Why wildcard:** Solves "which pattern should I use?" with data, not vibes. Network effects if it works.
+
+### 3. Auto-Nightly Merge Run
+Scheduled job that:
+- Runs all pending tasks from a queue
+- Produces single PR with all changes
+- Attaches full provenance (which agent did what)
+- Auto-merges if tests pass
+
+**Why wildcard:** If this works once, it's the demo that sells Scope to every eng team. "My repo makes progress while I sleep."
+
+---
+
+## Summary: The Opinionated Take
+
+1. **Electricity is context rot handling.** Not spawning, not the dashboard, not fancy patterns. The moment the agent gracefully hands off instead of thrashing—that's the product.
+
+2. **Evals are non-negotiable.** Without measurable truth, every change is a guess. Ship the harness before shipping features.
+
+3. **Passive > Active.** Embed the pattern index in the prompt. Don't rely on agents choosing to retrieve docs. They won't.
+
+4. **Orchestrator UX matters more than orchestrator features.** A visible banner beats a silent permission error. Show the agent what to do before it fails.
+
+5. **Integrations come after reliability.** Squad/GitHub/IDE are force multipliers—but they multiply whatever you have. Multiply chaos, get more chaos.
+
+6. **Evangelists need a story.** Onboarding → PR integration → shareable runs. That's the viral loop.
+
+7. **Avoid premature sophistication.** Schedulers and persistent agents are cool. They're also how you burn 3 months without shipping the core value.
+
+The priority stack: **Handoff > Evals > Passive Index > Onboarding > Integrations > Everything else.**
