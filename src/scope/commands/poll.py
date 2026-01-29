@@ -1,6 +1,7 @@
 """Poll command for scope.
 
-Returns session status as JSON.
+Returns lightweight session status as JSON — designed for non-blocking check-ins
+that don't bloat orchestrator context.
 """
 
 import click
@@ -8,7 +9,7 @@ import orjson
 
 from scope.core.state import (
     ensure_scope_dir,
-    has_trajectory,
+    load_all,
     load_session,
     load_trajectory_index,
     resolve_id,
@@ -16,13 +17,15 @@ from scope.core.state import (
 
 
 @click.command()
-@click.argument("session_ids", nargs=-1, required=True)
+@click.argument("session_ids", nargs=-1, required=False)
+@click.option("--all", "poll_all", is_flag=True, help="Poll all active sessions")
 @click.option("--trajectory", is_flag=True, help="Include trajectory index in output")
-def poll(session_ids: tuple[str, ...], trajectory: bool) -> None:
-    """Poll session status(es).
+def poll(session_ids: tuple[str, ...], poll_all: bool, trajectory: bool) -> None:
+    """Poll session status (lightweight check-in).
 
-    Returns JSON with current status and activity.
-    For multiple sessions, outputs one JSON object per line.
+    Returns concise JSON with status, elapsed time, tool call count,
+    and last activity. Designed to not bloat orchestrator context.
+    Use 'scope wait' to get full results.
 
     SESSION_IDS are the IDs or aliases of sessions to poll.
 
@@ -32,8 +35,21 @@ def poll(session_ids: tuple[str, ...], trajectory: bool) -> None:
 
         scope poll 0 1 2
 
-        scope poll my-task other-task
+        scope poll --all
     """
+    if poll_all:
+        sessions = load_all()
+        if not sessions:
+            click.echo("No sessions found", err=True)
+            raise SystemExit(1)
+        for session in sessions:
+            click.echo(orjson.dumps(_build_status(session.id, trajectory)).decode())
+        return
+
+    if not session_ids:
+        click.echo("Error: provide session IDs or use --all", err=True)
+        raise SystemExit(1)
+
     for session_id in session_ids:
         # Resolve alias to session ID if needed
         resolved_id = resolve_id(session_id)
@@ -46,35 +62,70 @@ def poll(session_ids: tuple[str, ...], trajectory: bool) -> None:
             click.echo(f"Session {session_id} not found", err=True)
             raise SystemExit(1)
 
-        result: dict[str, str] = {"id": resolved_id, "status": session.state}
+        click.echo(orjson.dumps(_build_status(resolved_id, trajectory)).decode())
 
-        scope_dir = ensure_scope_dir()
-        session_dir = scope_dir / "sessions" / resolved_id
 
-        # Activity will be added in Slice 7
-        activity_file = session_dir / "activity"
-        if activity_file.exists():
-            activity = ""
-            for line in activity_file.read_text().splitlines():
-                if line.strip():
-                    activity = line.strip()
-            if activity:
-                if session.state in {"done", "aborted", "exited", "evicted"}:
-                    activity = past_tense_activity(activity)
-                result["activity"] = activity
+def _build_status(session_id: str, include_trajectory: bool = False) -> dict:
+    """Build a compact status dict for a session.
 
-        # Include result if session is done
-        result_file = session_dir / "result"
-        if result_file.exists():
-            result["result"] = result_file.read_text()
+    Includes: id, status, elapsed, tool_calls, activity.
+    Excludes full result text (use 'scope wait' for that).
+    """
+    from datetime import datetime, timezone
 
-        # Include trajectory index if requested and available
-        if trajectory and has_trajectory(resolved_id):
-            traj_index = load_trajectory_index(resolved_id)
-            if traj_index is not None:
-                result["trajectory_index"] = traj_index
+    session = load_session(session_id)
+    if session is None:
+        return {"id": session_id, "status": "not_found"}
 
-        click.echo(orjson.dumps(result).decode())
+    result: dict[str, object] = {"id": session_id, "status": session.state}
+
+    # Elapsed time since creation
+    now = datetime.now(timezone.utc)
+    created = session.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    elapsed_seconds = int((now - created).total_seconds())
+    result["elapsed"] = _format_elapsed(elapsed_seconds)
+
+    # Tool call count from trajectory index
+    scope_dir = ensure_scope_dir()
+    session_dir = scope_dir / "sessions" / session_id
+
+    traj_index = load_trajectory_index(session_id)
+    if traj_index is not None:
+        tool_calls = traj_index.get("tool_calls", [])
+        result["tool_calls"] = len(tool_calls)
+    else:
+        result["tool_calls"] = 0
+
+    # Activity (last line of activity file)
+    activity_file = session_dir / "activity"
+    if activity_file.exists():
+        activity = ""
+        for line in activity_file.read_text().splitlines():
+            if line.strip():
+                activity = line.strip()
+        if activity:
+            if session.state in {"done", "aborted", "exited", "evicted"}:
+                activity = past_tense_activity(activity)
+            result["activity"] = activity
+
+    # Include full trajectory index only if requested
+    if include_trajectory and traj_index is not None:
+        result["trajectory_index"] = traj_index
+
+    return result
+
+
+def _format_elapsed(seconds: int) -> str:
+    """Format elapsed seconds as human-readable string."""
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m{seconds % 60}s"
+    hours = minutes // 60
+    return f"{hours}h{minutes % 60}m"
 
 
 def past_tense_activity(activity: str) -> str:
