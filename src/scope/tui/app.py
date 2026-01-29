@@ -389,10 +389,15 @@ class ScopeApp(App):
             )
             return
 
-        # Check if tmux window already exists (shouldn't, but check anyway)
+        # Check if tmux window already exists — if so, recover from a
+        # prior partial resume (window created but state not updated)
         tmux_session = get_scope_session()
         if has_window_in_session(tmux_session, window_name):
-            self.notify(f"Window {window_name} already exists", severity="error")
+            update_state(session_id, "running")
+            project_id = get_project_identifier()
+            remove_session(project_id, session_id)
+            self.refresh_sessions()
+            self.notify(f"Resumed session {session_id} (recovered existing window)")
             return
 
         try:
@@ -414,6 +419,14 @@ class ScopeApp(App):
                 env=env,
             )
 
+            # Update session state to running immediately after window creation
+            # to keep state consistent even if subsequent operations fail
+            update_state(session_id, "running")
+
+            # Remove from LRU cache since it's now running
+            project_id = get_project_identifier()
+            remove_session(project_id, session_id)
+
             # Set pane option for session tracking
             try:
                 set_pane_option(
@@ -426,13 +439,6 @@ class ScopeApp(App):
 
             # Ensure tmux hooks are installed
             install_tmux_hooks()
-
-            # Update session state to running
-            update_state(session_id, "running")
-
-            # Remove from LRU cache since it's now running
-            project_id = get_project_identifier()
-            remove_session(project_id, session_id)
 
             # Join the pane into current window
             pane_id = attach_in_split(window_name)
