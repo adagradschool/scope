@@ -55,7 +55,11 @@ HOOK_CONFIG = {
         {
             "matcher": "*",
             "hooks": [{"type": "command", "command": "scope-hook task"}],
-        }
+        },
+        {
+            "matcher": "*",
+            "hooks": [{"type": "command", "command": "scope-hook pattern-reinject"}],
+        },
     ],
     "Stop": [
         {
@@ -392,11 +396,13 @@ Before doing ANY work, you MUST select **at most one** pattern below and follow 
 
 ## Enforcement Protocol
 
-1. **STOP** — don’t start executing immediately.
+1. **STOP** — don't start executing immediately.
 2. **CLASSIFY** — does one pattern above clearly match?
-3. **FOLLOW or PROCEED**:
-   - If a pattern matches: **follow it explicitly** using `scope spawn` / `scope wait`.
+3. **COMMIT or PROCEED**:
+   - If a pattern matches: run `scope commit <pattern>` to register it, then **follow it explicitly** using `scope spawn` / `scope wait`. Use `scope advance` after completing each phase.
    - If no pattern matches: proceed directly, but keep the scope small.
+
+Pattern commitment persists across prompts — Scope will remind you of your pattern and current phase after every prompt submission. If you need to deviate, state why explicitly.
 
 ## Examples
 
@@ -420,6 +426,8 @@ When blocked by context gate:
 |---------|--------|
 | `scope spawn "task"` | Start subagent |
 | `scope spawn --id=X --after=Y "task"` | Start with dependency |
+| `scope commit <pattern>` | Commit to a pattern (tdd, ralph, etc.) |
+| `scope advance` | Advance to next pattern phase |
 | `scope poll` | Check status (non-blocking) |
 | `scope wait` | Block until complete |
 
@@ -443,6 +451,8 @@ scope                  # Launch TUI (shows all sessions)
 scope spawn "task"     # Start subagent with task
 scope spawn --plan     # Start in plan mode
 scope spawn --model=X  # Use specific model (opus/sonnet/haiku)
+scope commit <pattern> # Commit to pattern (tdd/ralph/map-reduce/...)
+scope advance          # Advance to next pattern phase
 scope poll [id]        # Check status (non-blocking)
 scope wait [id]        # Block until done
 scope abort <id>       # Kill a session

@@ -443,6 +443,137 @@ def has_trajectory(session_id: str) -> bool:
     return (session_dir / "trajectory.jsonl").exists()
 
 
+def save_pattern_state(
+    session_id: str,
+    pattern: str,
+    phases: list[str],
+    completed: list[str] | None = None,
+    current: str | None = None,
+) -> None:
+    """Save pattern commitment state for a session.
+
+    Writes a single pattern_state.json atomically (write to temp, rename).
+
+    Args:
+        session_id: The session ID.
+        pattern: Pattern name (e.g., "tdd", "ralph").
+        phases: Ordered list of phases (e.g., ["red", "green", "refactor"]).
+        completed: List of completed phase names.
+        current: Current phase name.
+
+    Raises:
+        FileNotFoundError: If session doesn't exist.
+    """
+    import tempfile
+
+    import orjson
+
+    scope_dir = _get_scope_dir()
+    session_dir = _get_session_dir(scope_dir, session_id)
+
+    if not session_dir.exists():
+        raise FileNotFoundError(f"Session {session_id} not found")
+
+    if current is not None:
+        resolved_current = current
+    elif phases:
+        resolved_current = phases[0]
+    else:
+        resolved_current = ""
+
+    state = {
+        "pattern": pattern,
+        "phases": phases,
+        "completed": completed or [],
+        "current": resolved_current,
+    }
+
+    target = session_dir / "pattern_state.json"
+    fd, tmp_path = tempfile.mkstemp(dir=session_dir, suffix=".tmp")
+    try:
+        with open(fd, "wb") as f:
+            f.write(orjson.dumps(state))
+        Path(tmp_path).rename(target)
+    except BaseException:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
+
+
+def load_pattern_state(session_id: str) -> dict | None:
+    """Load pattern commitment state for a session.
+
+    Args:
+        session_id: The session ID.
+
+    Returns:
+        Dictionary with pattern state, or None if no pattern committed.
+        Keys: pattern, phases, completed, current.
+    """
+    import orjson
+
+    scope_dir = _get_scope_dir()
+    session_dir = _get_session_dir(scope_dir, session_id)
+
+    state_file = session_dir / "pattern_state.json"
+    if not state_file.exists():
+        return None
+
+    state = orjson.loads(state_file.read_bytes())
+    if not state.get("pattern"):
+        return None
+
+    return state
+
+
+def advance_pattern_phase(session_id: str) -> dict | None:
+    """Advance to the next phase in the pattern.
+
+    Marks the current phase as completed and moves to the next one.
+
+    Args:
+        session_id: The session ID.
+
+    Returns:
+        Updated pattern state dict, or None if no pattern or already at end.
+    """
+    state = load_pattern_state(session_id)
+    if state is None:
+        return None
+
+    current = state["current"]
+    phases = state["phases"]
+    completed = list(state["completed"])
+
+    # Already at end — nothing to advance
+    if not current:
+        return None
+
+    if current not in completed:
+        completed.append(current)
+
+    # Find next phase
+    next_phase = ""
+    for phase in phases:
+        if phase not in completed:
+            next_phase = phase
+            break
+
+    save_pattern_state(
+        session_id=session_id,
+        pattern=state["pattern"],
+        phases=phases,
+        completed=completed,
+        current=next_phase,
+    )
+
+    return {
+        "pattern": state["pattern"],
+        "phases": phases,
+        "completed": completed,
+        "current": next_phase,
+    }
+
+
 def save_claude_session_id(session_id: str, claude_uuid: str) -> None:
     """Save the Claude session UUID for resuming.
 

@@ -170,6 +170,12 @@ def _send_contract(target: str, contract: str) -> None:
     help="Comma-separated verification criteria. Can be commands or natural language. "
     'Example: --verify "pytest tests/,ruff check,all types pass"',
 )
+@click.option(
+    "--pattern",
+    type=str,
+    default=None,
+    help="Suggest a pattern for the child agent (e.g., tdd, ralph)",
+)
 @click.pass_context
 def spawn(
     ctx: click.Context,
@@ -181,6 +187,7 @@ def spawn(
     model: str,
     dangerously_skip_permissions: bool,
     verify_spec: str,
+    pattern: str | None,
 ) -> None:
     """Spawn a new scope session.
 
@@ -363,6 +370,7 @@ def spawn(
             depends_on=depends_on if depends_on else None,
             prior_results=prior_results,
             verify=verify_criteria,
+            pattern=pattern,
         )
         (session_dir / "contract.md").write_text(contract)
 

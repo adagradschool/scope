@@ -3,6 +3,16 @@
 Generates markdown contracts that are sent to Claude Code as the initial prompt.
 """
 
+# Known pattern phases — used for pattern commitment tracking
+PATTERN_PHASES: dict[str, list[str]] = {
+    "tdd": ["red", "green", "refactor"],
+    "ralph": ["critique", "improve"],
+    "map-reduce": ["map", "wait", "reduce"],
+    "maker-checker": ["make", "check", "fix"],
+    "dag": [],  # DAG phases are task-specific
+    "rlm": ["peek", "grep", "dive"],
+}
+
 
 def generate_contract(
     prompt: str,
@@ -13,6 +23,7 @@ def generate_contract(
     prior_results: list[str] | None = None,
     file_scope: list[str] | None = None,
     verify: list[str] | None = None,
+    pattern: str | None = None,
 ) -> str:
     """Generate a contract markdown for a session.
 
@@ -28,6 +39,7 @@ def generate_contract(
         prior_results: Optional list of results from prior/piped sessions.
         file_scope: Optional list of file/directory constraints.
         verify: Optional list of verification criteria (natural language or commands).
+        pattern: Optional pattern commitment (e.g., 'tdd', 'ralph').
 
     Returns:
         Markdown string containing the contract.
@@ -50,6 +62,28 @@ def generate_contract(
     # Add phase metadata
     if phase:
         sections.append(f"# Phase\n\nYou are in the **{phase}** phase.")
+
+    # Add pattern commitment
+    if pattern:
+        pattern_lower = pattern.lower()
+        phases = PATTERN_PHASES.get(pattern_lower, [])
+        if phases:
+            phases_str = " → ".join(phases)
+            section = (
+                f"# Pattern Commitment\n\n"
+                f"You are committed to the **{pattern_lower}** pattern.\n\n"
+                f"Phases: {phases_str}\n\n"
+                f"Follow this pattern's phases in order. If you need to deviate, "
+                f"you MUST explicitly state why before doing so — drift must be conscious, not accidental."
+            )
+        else:
+            section = (
+                f"# Pattern Commitment\n\n"
+                f"You are committed to the **{pattern_lower}** pattern.\n\n"
+                f"Follow this pattern's workflow. If you need to deviate, "
+                f"you MUST explicitly state why before doing so — drift must be conscious, not accidental."
+            )
+        sections.append(section)
 
     # Add parent intent
     if parent_intent:
