@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 
-VALID_STATES = {"pending", "running", "done", "aborted", "failed", "exited", "evicted"}
+VALID_STATES = {"pending", "running", "done", "aborted", "failed", "exited", "evicted", "skipped"}
 
 
 @dataclass

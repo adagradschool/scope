@@ -19,7 +19,7 @@ from scope.core.state import (
 )
 
 
-TERMINAL_STATES = {"done", "aborted", "failed", "exited"}
+TERMINAL_STATES = {"done", "aborted", "failed", "exited", "skipped"}
 
 
 @click.command()

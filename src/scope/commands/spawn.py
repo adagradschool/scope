@@ -38,7 +38,7 @@ from scope.hooks.install import install_tmux_hooks
 # Placeholder task - will be inferred from first prompt via hooks
 PENDING_TASK = "(pending...)"
 CONTRACT_CHUNK_SIZE = 2000
-TERMINAL_STATES = {"done", "aborted", "failed", "exited"}
+TERMINAL_STATES = {"done", "aborted", "failed", "exited", "skipped"}
 
 
 def _wait_for_sessions(session_ids: list[str]) -> None:
@@ -171,6 +171,18 @@ def _send_contract(target: str, contract: str) -> None:
     'Example: --verify "pytest tests/,ruff check,all types pass"',
 )
 @click.option(
+    "--on-fail",
+    "on_fail",
+    default="",
+    help="Only run if the referenced session failed (implies --after)",
+)
+@click.option(
+    "--on-pass",
+    "on_pass",
+    default="",
+    help="Only run if the referenced session passed (implies --after)",
+)
+@click.option(
     "--pattern",
     type=str,
     default=None,
@@ -187,6 +199,8 @@ def spawn(
     model: str,
     dangerously_skip_permissions: bool,
     verify_spec: str,
+    on_fail: str,
+    on_pass: str,
     pattern: str | None,
 ) -> None:
     """Spawn a new scope session.
@@ -268,6 +282,41 @@ def spawn(
             if resolved not in depends_on:
                 depends_on.append(resolved)
 
+    # Parse and resolve conditional flags (--on-fail / --on-pass imply --after)
+    on_fail_id: str | None = None
+    on_pass_id: str | None = None
+    if on_fail:
+        resolved = resolve_id(on_fail.strip())
+        if resolved is None:
+            click.echo(
+                f"Error: --on-fail session '{on_fail}' not found\n"
+                f"  Cause: '{on_fail}' is not a valid session ID or alias.\n"
+                f"  Fix: List available sessions and use a valid ID or alias:\n"
+                f"    scope list\n"
+                f'    scope spawn --on-fail <session-id> "your prompt here"',
+                err=True,
+            )
+            raise SystemExit(1)
+        on_fail_id = resolved
+        if resolved not in depends_on:
+            depends_on.append(resolved)
+
+    if on_pass:
+        resolved = resolve_id(on_pass.strip())
+        if resolved is None:
+            click.echo(
+                f"Error: --on-pass session '{on_pass}' not found\n"
+                f"  Cause: '{on_pass}' is not a valid session ID or alias.\n"
+                f"  Fix: List available sessions and use a valid ID or alias:\n"
+                f"    scope list\n"
+                f'    scope spawn --on-pass <session-id> "your prompt here"',
+                err=True,
+            )
+            raise SystemExit(1)
+        on_pass_id = resolved
+        if resolved not in depends_on:
+            depends_on.append(resolved)
+
     # Wait for piped sessions to complete and collect their results
     prior_results: list[str] | None = None
     if pipe_ids:
@@ -294,6 +343,36 @@ def spawn(
             err=True,
         )
         raise SystemExit(1)
+
+    # Evaluate conditional flags: wait for dep, check outcome, skip if condition unmet
+    FAIL_STATES = {"failed", "aborted", "exited"}
+    if on_fail_id or on_pass_id:
+        cond_id: str = on_fail_id or on_pass_id  # type: ignore[assignment]
+        _wait_for_sessions([cond_id])
+        cond_session = load_session(cond_id)
+        cond_state = cond_session.state if cond_session else "unknown"
+
+        should_skip = False
+        if on_fail_id and cond_state not in FAIL_STATES:
+            should_skip = True
+        if on_pass_id and cond_state != "done":
+            should_skip = True
+
+        if should_skip:
+            # Create session record marked as skipped (no tmux window)
+            skipped = Session(
+                id=session_id,
+                task=prompt,
+                parent=parent,
+                state="skipped",
+                tmux_session="",
+                created_at=datetime.now(timezone.utc),
+                alias=alias,
+                depends_on=depends_on,
+            )
+            save_session(skipped)
+            click.echo(session_id)
+            return
 
     # Create session object - task will be inferred by hooks
     window_name = tmux_window_name(session_id)
