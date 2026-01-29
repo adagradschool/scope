@@ -12,6 +12,7 @@ def generate_contract(
     parent_intent: str | None = None,
     prior_results: list[str] | None = None,
     file_scope: list[str] | None = None,
+    verify: list[dict] | None = None,
 ) -> str:
     """Generate a contract markdown for a session.
 
@@ -26,6 +27,7 @@ def generate_contract(
         parent_intent: Optional parent/orchestrator goal context.
         prior_results: Optional list of results from prior/piped sessions.
         file_scope: Optional list of file/directory constraints.
+        verify: Optional list of verification steps (dicts with 'name' and 'command').
 
     Returns:
         Markdown string containing the contract.
@@ -67,6 +69,14 @@ def generate_contract(
         sections.append(
             f"# File Scope\n\n"
             f"Only modify files within the following paths:\n{constraints}"
+        )
+
+    # Add verification section
+    if verify:
+        checks = "\n".join(f"- {step['name']}: `{step['command']}`" for step in verify)
+        sections.append(
+            f"# Verification\n\n"
+            f"The following checks will run after you complete:\n{checks}"
         )
 
     return "\n\n".join(sections)
