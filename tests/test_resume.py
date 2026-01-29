@@ -178,8 +178,10 @@ def test_resume_updates_state_to_running(runner, mock_scope_base, monkeypatch, c
     assert loaded.state == "running"
 
 
-def test_resume_window_already_exists(runner, mock_scope_base, monkeypatch):
-    """Test resume fails if window already exists."""
+def test_resume_window_already_exists_recovers(runner, mock_scope_base, monkeypatch):
+    """Test resume recovers when window already exists for evicted session."""
+    from scope.core.state import load_session as load_session_fn
+
     session = Session(
         id="0",
         task="Test",
@@ -191,15 +193,21 @@ def test_resume_window_already_exists(runner, mock_scope_base, monkeypatch):
     save_session(session)
     save_claude_session_id("0", "04cad4c6-1aee-4ac7-b38c-596edda8e3e5")
 
-    # Mock window check to return true (window exists)
+    # Mock window check to return true (window exists from prior partial resume)
     monkeypatch.setattr(
         "scope.commands.resume.has_window_in_session", lambda s, w: True
     )
     monkeypatch.setattr(
         "scope.commands.resume.get_scope_session", lambda: "scope-test"
     )
+    monkeypatch.setattr("scope.commands.resume.remove_session", lambda p, s: None)
+    monkeypatch.setattr(
+        "scope.commands.resume.get_project_identifier", lambda: "test-project"
+    )
 
     result = runner.invoke(main, ["resume", "0"])
 
-    assert result.exit_code == 1
-    assert "already exists" in result.output
+    assert result.exit_code == 0
+    assert "recovered existing window" in result.output
+    loaded = load_session_fn("0")
+    assert loaded.state == "running"

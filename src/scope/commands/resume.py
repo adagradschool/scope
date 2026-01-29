@@ -101,14 +101,14 @@ def resume(
     window_name = tmux_window_name(session_id)
     tmux_session = get_scope_session()
     if has_window_in_session(tmux_session, window_name):
-        click.echo(
-            f"Error: Window {window_name} already exists\n"
-            f"  Cause: Session may have been manually resumed or is still running.\n"
-            f"  Fix: Select the existing window:\n"
-            f"    tmux select-window -t {tmux_session}:{window_name}",
-            err=True,
-        )
-        raise SystemExit(1)
+        # Window exists for an evicted session — a prior resume partially
+        # succeeded (window created but state not updated).  Recover by
+        # updating state and pointing the user to the existing window.
+        update_state(session_id, "running")
+        project_id = get_project_identifier()
+        remove_session(project_id, session_id)
+        click.echo(f"Resumed session {session_id} (recovered existing window)")
+        return
 
     try:
         # Build command to resume Claude session
@@ -134,6 +134,14 @@ def resume(
             env=env,
         )
 
+        # Update session state to running immediately after window creation
+        # to keep state consistent even if subsequent operations fail
+        update_state(session_id, "running")
+
+        # Update LRU cache: remove from completed cache since it's now running
+        project_id = get_project_identifier()
+        remove_session(project_id, session_id)
+
         # Set pane option for session tracking
         try:
             set_pane_option(
@@ -146,14 +154,6 @@ def resume(
 
         # Ensure tmux hooks are installed
         install_tmux_hooks()
-
-        # Update session state to running
-        update_state(session_id, "running")
-
-        # Update LRU cache: touch to mark as recently accessed
-        # and remove from completed cache since it's now running
-        project_id = get_project_identifier()
-        remove_session(project_id, session_id)
 
         click.echo(f"Resumed session {session_id}")
 
