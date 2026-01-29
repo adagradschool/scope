@@ -90,9 +90,7 @@ def _collect_piped_results(session_ids: list[str]) -> list[str]:
                 label = sid
                 if session and session.alias:
                     label = f"{session.alias} ({sid})"
-                results.append(
-                    f"The previous session [{label}] produced:\n\n{text}"
-                )
+                results.append(f"The previous session [{label}] produced:\n\n{text}")
     return results
 
 
