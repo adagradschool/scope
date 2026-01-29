@@ -12,6 +12,7 @@ import os
 import click
 
 from scope.commands.abort import abort
+from scope.commands.check_termination import check_termination
 from scope.commands.commit import advance, commit
 from scope.commands.poll import poll
 from scope.commands.resume import resume
@@ -128,6 +129,7 @@ def main(
 main.add_command(spawn)
 main.add_command(poll)
 main.add_command(abort)
+main.add_command(check_termination)
 main.add_command(commit)
 main.add_command(advance)
 main.add_command(resume)

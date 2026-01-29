@@ -176,6 +176,20 @@ def _send_contract(target: str, contract: str) -> None:
     default=None,
     help="Suggest a pattern for the child agent (e.g., tdd, ralph)",
 )
+@click.option(
+    "--terminate-when",
+    "terminate_spec",
+    default="",
+    help="Comma-separated termination criteria for loop control. "
+    'Example: --terminate-when "pytest tests/,ruff check src/"',
+)
+@click.option(
+    "--max-iterations",
+    "max_iterations",
+    type=int,
+    default=None,
+    help="Max iteration bound for loop control (default: 10)",
+)
 @click.pass_context
 def spawn(
     ctx: click.Context,
@@ -188,6 +202,8 @@ def spawn(
     dangerously_skip_permissions: bool,
     verify_spec: str,
     pattern: str | None,
+    terminate_spec: str,
+    max_iterations: int | None,
 ) -> None:
     """Spawn a new scope session.
 
@@ -224,6 +240,11 @@ def spawn(
     verify_criteria: list[str] | None = None
     if verify_spec:
         verify_criteria = [c.strip() for c in verify_spec.split(",") if c.strip()]
+
+    # Parse termination criteria
+    terminate_criteria: list[str] | None = None
+    if terminate_spec:
+        terminate_criteria = [c.strip() for c in terminate_spec.split(",") if c.strip()]
 
     # Parse and resolve dependencies
     depends_on: list[str] = []
@@ -371,8 +392,20 @@ def spawn(
             prior_results=prior_results,
             verify=verify_criteria,
             pattern=pattern,
+            termination=terminate_criteria,
+            max_iterations=max_iterations,
         )
         (session_dir / "contract.md").write_text(contract)
+
+        # Save termination criteria and max iterations for later evaluation
+        if terminate_criteria:
+            from scope.core.termination import (
+                save_max_iterations,
+                save_termination_criteria,
+            )
+
+            save_termination_criteria(session_dir, terminate_criteria)
+            save_max_iterations(session_dir, max_iterations or 10)
 
         # Wait for Claude Code to signal readiness via SessionStart hook
         # Skip if SCOPE_SKIP_READY_CHECK is set (used in tests)

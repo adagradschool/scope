@@ -20,7 +20,17 @@ from scope.core.state import (
 @click.argument("session_ids", nargs=-1, required=False)
 @click.option("--all", "poll_all", is_flag=True, help="Poll all active sessions")
 @click.option("--trajectory", is_flag=True, help="Include trajectory index in output")
-def poll(session_ids: tuple[str, ...], poll_all: bool, trajectory: bool) -> None:
+@click.option(
+    "--check-termination",
+    is_flag=True,
+    help="Run termination criteria checks and include recommendation",
+)
+def poll(
+    session_ids: tuple[str, ...],
+    poll_all: bool,
+    trajectory: bool,
+    check_termination: bool,
+) -> None:
     """Poll session status (lightweight check-in).
 
     Returns concise JSON with status, elapsed time, tool call count,
@@ -43,7 +53,11 @@ def poll(session_ids: tuple[str, ...], poll_all: bool, trajectory: bool) -> None
             click.echo("No sessions found", err=True)
             raise SystemExit(1)
         for session in sessions:
-            click.echo(orjson.dumps(_build_status(session.id, trajectory)).decode())
+            click.echo(
+                orjson.dumps(
+                    _build_status(session.id, trajectory, check_termination)
+                ).decode()
+            )
         return
 
     if not session_ids:
@@ -62,10 +76,18 @@ def poll(session_ids: tuple[str, ...], poll_all: bool, trajectory: bool) -> None
             click.echo(f"Session {session_id} not found", err=True)
             raise SystemExit(1)
 
-        click.echo(orjson.dumps(_build_status(resolved_id, trajectory)).decode())
+        click.echo(
+            orjson.dumps(
+                _build_status(resolved_id, trajectory, check_termination)
+            ).decode()
+        )
 
 
-def _build_status(session_id: str, include_trajectory: bool = False) -> dict:
+def _build_status(
+    session_id: str,
+    include_trajectory: bool = False,
+    check_termination: bool = False,
+) -> dict:
     """Build a compact status dict for a session.
 
     Includes: id, status, elapsed, tool_calls, activity.
@@ -113,6 +135,39 @@ def _build_status(session_id: str, include_trajectory: bool = False) -> dict:
     # Include full trajectory index only if requested
     if include_trajectory and traj_index is not None:
         result["trajectory_index"] = traj_index
+
+    # Run termination criteria checks if requested
+    if check_termination:
+        from scope.core.termination import (
+            evaluate_termination,
+            load_iteration_count,
+            load_max_iterations,
+            load_termination_criteria,
+        )
+
+        criteria = load_termination_criteria(session_dir)
+        if criteria is not None:
+            iteration = load_iteration_count(session_dir)
+            max_iter = load_max_iterations(session_dir)
+            eval_result = evaluate_termination(
+                criteria=criteria,
+                iteration=iteration,
+                max_iterations=max_iter,
+            )
+            result["termination"] = {
+                "iteration": eval_result.iteration,
+                "max_iterations": eval_result.max_iterations,
+                "recommend_terminate": eval_result.recommend_terminate,
+                "reason": eval_result.reason,
+                "checks": [
+                    {
+                        "criterion": c.criterion,
+                        "passed": c.passed,
+                        "detail": c.detail,
+                    }
+                    for c in eval_result.checks
+                ],
+            }
 
     return result
 

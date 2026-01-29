@@ -24,6 +24,8 @@ def generate_contract(
     file_scope: list[str] | None = None,
     verify: list[str] | None = None,
     pattern: str | None = None,
+    termination: list[str] | None = None,
+    max_iterations: int | None = None,
 ) -> str:
     """Generate a contract markdown for a session.
 
@@ -40,6 +42,8 @@ def generate_contract(
         file_scope: Optional list of file/directory constraints.
         verify: Optional list of verification criteria (natural language or commands).
         pattern: Optional pattern commitment (e.g., 'tdd', 'ralph').
+        termination: Optional list of termination criteria for loop control.
+        max_iterations: Optional max iteration bound for loop control.
 
     Returns:
         Markdown string containing the contract.
@@ -111,6 +115,18 @@ def generate_contract(
         sections.append(
             f"# Verification\n\n"
             f"Your output will be verified against these criteria:\n{checks}"
+        )
+
+    # Add termination criteria section
+    if termination:
+        criteria = "\n".join(f"- {c}" for c in termination)
+        bound = f" (max {max_iterations} iterations)" if max_iterations else ""
+        sections.append(
+            f"# Termination Criteria\n\n"
+            f"This session is part of a feedback loop{bound}. "
+            f"The loop completes when:\n{criteria}\n\n"
+            f"After each iteration, these criteria will be checked and the orchestrator "
+            f"will receive a recommendation to terminate or continue."
         )
 
     return "\n\n".join(sections)
