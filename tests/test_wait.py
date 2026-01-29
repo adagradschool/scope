@@ -3,7 +3,9 @@
 import threading
 import time
 from datetime import datetime, timezone
+from unittest.mock import patch
 
+import orjson
 import pytest
 from click.testing import CliRunner
 
@@ -476,3 +478,284 @@ def test_wait_multiple_failed_with_reasons(runner, mock_scope_base):
     assert "Failed: timeout" in result.output
     assert "[1]" in result.output
     assert "Failed: dependency failed" in result.output
+
+
+# --- Summary mode tests ---
+#
+# Summary tests mock _summarize_result since it shells out to claude -p.
+
+
+def _mock_summarize(task, result_text, status):
+    """Deterministic mock for _summarize_result."""
+    return f"Summary of {task}"
+
+
+@pytest.fixture
+def mock_summarize():
+    """Patch _summarize_result to avoid subprocess calls in tests."""
+    with patch(
+        "scope.commands.wait._summarize_result", side_effect=_mock_summarize
+    ) as m:
+        yield m
+
+
+def test_wait_summary_flag_exists(runner):
+    """Test wait --help shows --summary flag."""
+    result = runner.invoke(main, ["wait", "--help"])
+    assert result.exit_code == 0
+    assert "--summary" in result.output
+
+
+def test_wait_summary_returns_compact_output(runner, mock_scope_base, mock_summarize):
+    """Test wait --summary returns LLM-generated summary instead of full result."""
+    session = Session(
+        id="0",
+        task="Fix auth bug",
+        parent="",
+        state="done",
+        tmux_session="scope-0",
+        created_at=datetime.now(timezone.utc),
+    )
+    save_session(session)
+
+    # Write a result file with detailed content
+    result_file = mock_scope_base / "sessions" / "0" / "result"
+    result_file.write_text(
+        "I fixed the authentication bug in src/auth.ts.\n"
+        "The issue was that the JWT token was not being validated correctly.\n"
+        "All tests pass now.\n"
+    )
+
+    # Write trajectory index with tool summary
+    index_file = mock_scope_base / "sessions" / "0" / "trajectory_index.json"
+    index_data = {
+        "turn_count": 8,
+        "tool_calls": ["Read", "Grep", "Edit", "Edit", "Write", "Bash"],
+        "tool_summary": {"Read": 1, "Grep": 1, "Edit": 2, "Write": 1, "Bash": 1},
+    }
+    index_file.write_bytes(orjson.dumps(index_data))
+
+    result = runner.invoke(main, ["wait", "--summary", "0"])
+
+    assert result.exit_code == 0
+    output = result.output
+    # Summary should include pass/fail status
+    assert "PASS" in output
+    # Summary should include the LLM-generated summary
+    assert "Summary of Fix auth bug" in output
+    # Summary should include files changed count
+    assert "files_changed=3" in output
+    # Summary should include test status
+    assert "tests=pass" in output
+    # Summary should NOT include the full multi-line result
+    assert "JWT token" not in output
+    # _summarize_result was called with task, result text, and status
+    mock_summarize.assert_called_once()
+
+
+def test_wait_summary_includes_pass_fail(runner, mock_scope_base, mock_summarize):
+    """Test summary shows PASS for done sessions and FAIL for failed."""
+    session = Session(
+        id="0",
+        task="Test task",
+        parent="",
+        state="done",
+        tmux_session="scope-0",
+        created_at=datetime.now(timezone.utc),
+    )
+    save_session(session)
+    (mock_scope_base / "sessions" / "0" / "result").write_text("Done.")
+
+    result = runner.invoke(main, ["wait", "--summary", "0"])
+    assert result.exit_code == 0
+    assert "PASS" in result.output
+
+
+def test_wait_summary_failed_session(runner, mock_scope_base):
+    """Test summary shows FAIL for failed sessions."""
+    session = Session(
+        id="0",
+        task="Test task",
+        parent="",
+        state="failed",
+        tmux_session="scope-0",
+        created_at=datetime.now(timezone.utc),
+    )
+    save_session(session)
+    save_failed_reason("0", "dependency failed")
+
+    result = runner.invoke(main, ["wait", "--summary", "0"])
+    assert result.exit_code == 3
+    assert "FAIL" in result.output
+
+
+def test_wait_summary_files_changed(runner, mock_scope_base, mock_summarize):
+    """Test summary includes files changed count from trajectory index."""
+    session = Session(
+        id="0",
+        task="Refactor",
+        parent="",
+        state="done",
+        tmux_session="scope-0",
+        created_at=datetime.now(timezone.utc),
+    )
+    save_session(session)
+    (mock_scope_base / "sessions" / "0" / "result").write_text("Refactored.")
+
+    # Write trajectory index with Edit and Write tool calls
+    index_file = mock_scope_base / "sessions" / "0" / "trajectory_index.json"
+    index_data = {
+        "turn_count": 4,
+        "tool_calls": ["Edit", "Edit", "Write"],
+        "tool_summary": {"Edit": 2, "Write": 1},
+    }
+    index_file.write_bytes(orjson.dumps(index_data))
+
+    result = runner.invoke(main, ["wait", "--summary", "0"])
+    assert result.exit_code == 0
+    assert "files_changed=3" in result.output
+
+
+def test_wait_summary_test_status_pass(runner, mock_scope_base, mock_summarize):
+    """Test summary detects passing tests from result text."""
+    session = Session(
+        id="0",
+        task="Fix bug",
+        parent="",
+        state="done",
+        tmux_session="scope-0",
+        created_at=datetime.now(timezone.utc),
+    )
+    save_session(session)
+    (mock_scope_base / "sessions" / "0" / "result").write_text(
+        "Fixed the bug. All tests passed."
+    )
+
+    index_file = mock_scope_base / "sessions" / "0" / "trajectory_index.json"
+    index_data = {
+        "turn_count": 3,
+        "tool_calls": ["Edit", "Bash"],
+        "tool_summary": {"Edit": 1, "Bash": 1},
+    }
+    index_file.write_bytes(orjson.dumps(index_data))
+
+    result = runner.invoke(main, ["wait", "--summary", "0"])
+    assert result.exit_code == 0
+    assert "tests=pass" in result.output
+
+
+def test_wait_summary_test_status_fail(runner, mock_scope_base, mock_summarize):
+    """Test summary detects failing tests from result text."""
+    session = Session(
+        id="0",
+        task="Fix bug",
+        parent="",
+        state="done",
+        tmux_session="scope-0",
+        created_at=datetime.now(timezone.utc),
+    )
+    save_session(session)
+    (mock_scope_base / "sessions" / "0" / "result").write_text(
+        "Attempted fix but 2 tests failed."
+    )
+
+    index_file = mock_scope_base / "sessions" / "0" / "trajectory_index.json"
+    index_data = {
+        "turn_count": 3,
+        "tool_calls": ["Edit", "Bash"],
+        "tool_summary": {"Edit": 1, "Bash": 1},
+    }
+    index_file.write_bytes(orjson.dumps(index_data))
+
+    result = runner.invoke(main, ["wait", "--summary", "0"])
+    assert result.exit_code == 0
+    assert "tests=fail" in result.output
+
+
+def test_wait_summary_no_tests(runner, mock_scope_base, mock_summarize):
+    """Test summary shows tests=none when no Bash calls."""
+    session = Session(
+        id="0",
+        task="Read code",
+        parent="",
+        state="done",
+        tmux_session="scope-0",
+        created_at=datetime.now(timezone.utc),
+    )
+    save_session(session)
+    (mock_scope_base / "sessions" / "0" / "result").write_text("Reviewed the code.")
+
+    result = runner.invoke(main, ["wait", "--summary", "0"])
+    assert result.exit_code == 0
+    assert "tests=none" in result.output
+
+
+def test_wait_regular_still_returns_full_result(runner, mock_scope_base):
+    """Test wait without --summary still returns full result text."""
+    session = Session(
+        id="0",
+        task="Fix auth bug",
+        parent="",
+        state="done",
+        tmux_session="scope-0",
+        created_at=datetime.now(timezone.utc),
+    )
+    save_session(session)
+
+    full_result = (
+        "I fixed the authentication bug in src/auth.ts.\n"
+        "The issue was that the JWT token was not being validated correctly.\n"
+        "All tests pass now.\n"
+    )
+    result_file = mock_scope_base / "sessions" / "0" / "result"
+    result_file.write_text(full_result)
+
+    result = runner.invoke(main, ["wait", "0"])
+    assert result.exit_code == 0
+    # Full result should be present without --summary
+    assert "JWT token" in result.output
+    assert "PASS" not in result.output  # No summary markers
+
+
+def test_wait_summary_aborted_session(runner, mock_scope_base, mock_summarize):
+    """Test summary shows ABORT for aborted sessions."""
+    session = Session(
+        id="0",
+        task="Test task",
+        parent="",
+        state="aborted",
+        tmux_session="scope-0",
+        created_at=datetime.now(timezone.utc),
+    )
+    save_session(session)
+
+    result = runner.invoke(main, ["wait", "--summary", "0"])
+    assert result.exit_code == 2
+    assert "ABORT" in result.output
+
+
+def test_wait_summary_multiple_sessions(runner, mock_scope_base, mock_summarize):
+    """Test summary works with multiple sessions."""
+    for i in range(3):
+        session = Session(
+            id=str(i),
+            task=f"Task {i}",
+            parent="",
+            state="done",
+            tmux_session=f"scope-{i}",
+            created_at=datetime.now(timezone.utc),
+        )
+        save_session(session)
+        (mock_scope_base / "sessions" / str(i) / "result").write_text(
+            f"Completed task {i}."
+        )
+
+    result = runner.invoke(main, ["wait", "--summary", "0", "1", "2"])
+
+    assert result.exit_code == 0
+    # Each session should have a header and compact summary
+    assert "[0]" in result.output
+    assert "[1]" in result.output
+    assert "[2]" in result.output
+    assert "PASS" in result.output
+    assert result.output.count("PASS") == 3
