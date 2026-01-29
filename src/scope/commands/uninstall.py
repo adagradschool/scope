@@ -4,7 +4,6 @@ Completely removes scope from the system, including:
 - ~/.scope directory (all session data)
 - Scope hooks from Claude Code settings
 - Scope skills from ~/.claude/skills/
-- Scope custom commands from ~/.claude/commands/
 - ccstatusline configuration added by scope
 - tmux hooks installed by scope
 """
@@ -16,7 +15,6 @@ from pathlib import Path
 import click
 
 from scope.hooks.install import (
-    get_claude_commands_dir,
     get_claude_settings_path,
     get_claude_skills_dir,
     uninstall_hooks,
@@ -24,10 +22,7 @@ from scope.hooks.install import (
 )
 
 # List of scope skills to remove
-SCOPE_SKILLS = ["ralph", "tdd", "rlm", "map-reduce", "maker-checker", "dag"]
-
-# List of scope custom commands to remove
-SCOPE_COMMANDS = ["scope.md"]
+SCOPE_SKILLS = ["scope", "ralph", "tdd", "rlm", "map-reduce", "maker-checker", "dag"]
 
 
 def get_scope_data_dir() -> Path:
@@ -51,27 +46,6 @@ def uninstall_skills() -> int:
         skill_dir = skills_dir / skill_name
         if skill_dir.exists():
             shutil.rmtree(skill_dir)
-            removed += 1
-
-    return removed
-
-
-def uninstall_custom_commands() -> int:
-    """Remove scope-installed custom commands from ~/.claude/commands/.
-
-    Only removes commands that were installed by scope.
-    Preserves any user-installed commands.
-
-    Returns:
-        Number of commands removed.
-    """
-    commands_dir = get_claude_commands_dir()
-    removed = 0
-
-    for command_file in SCOPE_COMMANDS:
-        command_path = commands_dir / command_file
-        if command_path.exists():
-            command_path.unlink()
             removed += 1
 
     return removed
@@ -168,7 +142,7 @@ def remove_scope_data() -> bool:
 @click.option(
     "--keep-data",
     is_flag=True,
-    help="Keep ~/.scope session data (only remove hooks and commands)",
+    help="Keep ~/.scope session data (only remove hooks and skills)",
 )
 def uninstall(yes: bool, keep_data: bool) -> None:
     """Completely remove scope from your system.
@@ -178,12 +152,11 @@ def uninstall(yes: bool, keep_data: bool) -> None:
     \b
     1. Removes scope hooks from ~/.claude/settings.json
     2. Removes scope skills from ~/.claude/skills/ (ralph, tdd, rlm, etc.)
-    3. Removes scope commands from ~/.claude/commands/
-    4. Removes statusLine config if it uses ccstatusline
-    5. Removes tmux pane-died hook
-    6. Removes ~/.scope directory (unless --keep-data)
+    3. Removes statusLine config if it uses ccstatusline
+    4. Removes tmux pane-died hook
+    5. Removes ~/.scope directory (unless --keep-data)
 
-    User-installed hooks, skills, and commands are preserved.
+    User hooks and skills are preserved.
 
     To reinstall scope later, run: pip install scopeai && scope setup
 
@@ -200,8 +173,7 @@ def uninstall(yes: bool, keep_data: bool) -> None:
     # Show what will be removed
     click.echo("This will remove:")
     click.echo("  - Scope hooks from Claude Code settings")
-    click.echo("  - Scope skills (ralph, tdd, rlm, map-reduce, maker-checker, dag)")
-    click.echo("  - Scope custom commands")
+    click.echo("  - Scope skills (scope, ralph, tdd, rlm, map-reduce, maker-checker, dag)")
     click.echo("  - ccstatusline status bar configuration")
     click.echo("  - tmux pane-died hook")
 
@@ -211,7 +183,7 @@ def uninstall(yes: bool, keep_data: bool) -> None:
             click.echo(f"  - Session data in {scope_dir}")
 
     click.echo()
-    click.echo("User hooks, skills, and commands will be preserved.")
+    click.echo("User hooks and skills will be preserved.")
     click.echo()
 
     # Find binaries
@@ -242,24 +214,19 @@ def uninstall(yes: bool, keep_data: bool) -> None:
     skills_removed = uninstall_skills()
     click.echo(f"  Removed {skills_removed} skills.")
 
-    # 3. Remove custom commands
-    click.echo("Removing scope custom commands...")
-    commands_removed = uninstall_custom_commands()
-    click.echo(f"  Removed {commands_removed} commands.")
-
-    # 4. Remove ccstatusline config
+    # 3. Remove ccstatusline config
     click.echo("Removing ccstatusline configuration...")
     if uninstall_ccstatusline():
         click.echo("  Removed statusLine from Claude settings.")
     else:
         click.echo("  No ccstatusline config found (or not installed by scope).")
 
-    # 5. Remove tmux hooks
+    # 4. Remove tmux hooks
     click.echo("Removing tmux hooks...")
     uninstall_tmux_hooks()
     click.echo("  Done.")
 
-    # 6. Remove data directory
+    # 5. Remove data directory
     if not keep_data:
         click.echo("Removing scope data directory...")
         if remove_scope_data():

@@ -1,19 +1,14 @@
 """Tests for the uninstall command."""
 
-import shutil
-from pathlib import Path
-
 import orjson
 import pytest
 from click.testing import CliRunner
 
 from scope.commands.uninstall import (
-    SCOPE_COMMANDS,
     SCOPE_SKILLS,
     remove_scope_data,
     uninstall,
     uninstall_ccstatusline,
-    uninstall_custom_commands,
     uninstall_skills,
 )
 
@@ -36,17 +31,11 @@ def mock_claude_dir(tmp_path, monkeypatch):
     def mock_skills_dir():
         return claude_dir / "skills"
 
-    def mock_commands_dir():
-        return claude_dir / "commands"
-
     monkeypatch.setattr(
         "scope.commands.uninstall.get_claude_settings_path", mock_settings_path
     )
     monkeypatch.setattr(
         "scope.commands.uninstall.get_claude_skills_dir", mock_skills_dir
-    )
-    monkeypatch.setattr(
-        "scope.commands.uninstall.get_claude_commands_dir", mock_commands_dir
     )
 
     return claude_dir
@@ -118,55 +107,6 @@ def test_uninstall_skills_handles_empty_skills_dir(mock_claude_dir):
     # Don't create skills dir - it doesn't exist
 
     removed = uninstall_skills()
-
-    assert removed == 0
-
-
-# --- uninstall_custom_commands tests ---
-
-
-def test_uninstall_custom_commands_removes_only_scope_commands(mock_claude_dir):
-    """Test uninstall_custom_commands removes only scope-installed commands."""
-    commands_dir = mock_claude_dir / "commands"
-    commands_dir.mkdir()
-
-    # Create scope commands
-    for command_file in SCOPE_COMMANDS:
-        (commands_dir / command_file).write_text("# Scope command")
-
-    # Create a user command that should NOT be removed
-    user_command = commands_dir / "my-command.md"
-    user_command.write_text("# My custom command")
-
-    removed = uninstall_custom_commands()
-
-    # All scope commands should be removed
-    assert removed == len(SCOPE_COMMANDS)
-    for command_file in SCOPE_COMMANDS:
-        assert not (commands_dir / command_file).exists()
-
-    # User command should remain
-    assert user_command.exists()
-    assert user_command.read_text() == "# My custom command"
-
-
-def test_uninstall_custom_commands_handles_missing_commands(mock_claude_dir):
-    """Test uninstall_custom_commands handles missing commands gracefully."""
-    commands_dir = mock_claude_dir / "commands"
-    commands_dir.mkdir()
-
-    # Don't create any scope commands
-
-    removed = uninstall_custom_commands()
-
-    assert removed == 0
-
-
-def test_uninstall_custom_commands_handles_empty_dir(mock_claude_dir):
-    """Test uninstall_custom_commands handles missing commands directory."""
-    # Don't create commands dir - it doesn't exist
-
-    removed = uninstall_custom_commands()
 
     assert removed == 0
 
@@ -288,15 +228,11 @@ def test_cli_uninstall_with_yes_flag(
     mock_scope_dir.mkdir()
     (mock_scope_dir / "sessions").mkdir()
 
-    # Create skills and commands
+    # Create skills
     skills_dir = mock_claude_dir / "skills"
     skills_dir.mkdir()
     (skills_dir / "ralph").mkdir()
     (skills_dir / "ralph" / "SKILL.md").write_text("# ralph")
-
-    commands_dir = mock_claude_dir / "commands"
-    commands_dir.mkdir()
-    (commands_dir / "scope.md").write_text("# scope")
 
     result = runner.invoke(uninstall, ["--yes"])
 
@@ -304,7 +240,6 @@ def test_cli_uninstall_with_yes_flag(
     assert "Scope has been uninstalled" in result.output
     assert not mock_scope_dir.exists()
     assert not (skills_dir / "ralph").exists()
-    assert not (commands_dir / "scope.md").exists()
 
 
 def test_cli_uninstall_with_keep_data_flag(
@@ -373,7 +308,7 @@ def test_cli_uninstall_shows_binary_note(runner, mock_claude_dir, monkeypatch, t
 def test_cli_uninstall_reports_removed_counts(
     runner, mock_claude_dir, mock_scope_dir, monkeypatch
 ):
-    """Test CLI uninstall reports the number of skills and commands removed."""
+    """Test CLI uninstall reports the number of skills removed."""
     # Setup mocks
     monkeypatch.setattr("scope.commands.uninstall.uninstall_hooks", lambda: None)
     monkeypatch.setattr("scope.commands.uninstall.uninstall_tmux_hooks", lambda: None)
@@ -388,13 +323,7 @@ def test_cli_uninstall_reports_removed_counts(
         (skills_dir / skill_name).mkdir()
         (skills_dir / skill_name / "SKILL.md").write_text(f"# {skill_name}")
 
-    # Create 1 command
-    commands_dir = mock_claude_dir / "commands"
-    commands_dir.mkdir()
-    (commands_dir / "scope.md").write_text("# scope")
-
     result = runner.invoke(uninstall, ["--yes", "--keep-data"])
 
     assert result.exit_code == 0
     assert "Removed 3 skills" in result.output
-    assert "Removed 1 commands" in result.output
