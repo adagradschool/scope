@@ -304,19 +304,17 @@ def test_generate_contract_parent_intent_and_prior_results():
 
 
 def test_generate_contract_with_verify():
-    """Test contract includes verification section."""
+    """Test contract includes verification criteria."""
     contract = generate_contract(
         prompt="Implement feature",
-        verify=[
-            {"name": "tests", "command": "pytest"},
-            {"name": "lint", "command": "ruff check"},
-        ],
+        verify=["pytest tests/", "ruff check", "all types pass"],
     )
 
     assert "# Verification" in contract
-    assert "The following checks will run after you complete" in contract
-    assert "tests: `pytest`" in contract
-    assert "lint: `ruff check`" in contract
+    assert "verified against these criteria" in contract
+    assert "- pytest tests/" in contract
+    assert "- ruff check" in contract
+    assert "- all types pass" in contract
 
 
 def test_generate_contract_verify_after_file_scope():
@@ -324,7 +322,7 @@ def test_generate_contract_verify_after_file_scope():
     contract = generate_contract(
         prompt="Do work",
         file_scope=["src/"],
-        verify=[{"name": "tests", "command": "pytest"}],
+        verify=["pytest"],
     )
 
     assert "# File Scope" in contract
@@ -355,7 +353,7 @@ def test_generate_contract_full_with_verify():
         parent_intent="Build the auth system",
         prior_results=["Previous research completed."],
         file_scope=["src/auth/"],
-        verify=[{"name": "tests", "command": "pytest"}],
+        verify=["pytest"],
     )
 
     deps_idx = contract.index("# Dependencies")

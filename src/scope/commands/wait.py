@@ -6,7 +6,6 @@ Blocks until session(s) complete (done or aborted).
 from pathlib import Path
 
 import click
-import orjson
 from watchfiles import watch
 
 from scope.core.state import (
@@ -112,27 +111,6 @@ def _format_header(session_id: str) -> str:
     return f"[{session_id}]"
 
 
-def _output_verification(verify_result_file: Path) -> None:
-    """Output verification results from a verify_result.json file."""
-    try:
-        data = orjson.loads(verify_result_file.read_bytes())
-    except (orjson.JSONDecodeError, OSError):
-        return
-
-    steps = data.get("steps", [])
-    if not steps:
-        return
-
-    parts = []
-    for step in steps:
-        name = step.get("name", "?")
-        passed = step.get("passed", False)
-        status = "passed" if passed else "FAILED"
-        parts.append(f"{name} {status}")
-
-    click.echo(f"Verification: {', '.join(parts)}")
-
-
 def _output_results(session_ids: tuple[str, ...], states: dict[str, str]) -> None:
     """Output results for all sessions and exit with appropriate code."""
     scope_dir = ensure_scope_dir()
@@ -155,19 +133,13 @@ def _output_results(session_ids: tuple[str, ...], states: dict[str, str]) -> Non
                     click.echo("\n")
             continue
 
-        session_dir = scope_dir / "sessions" / session_id
-        result_file = session_dir / "result"
+        result_file = scope_dir / "sessions" / session_id / "result"
         if result_file.exists():
             if multiple:
                 click.echo(_format_header(session_id))
             click.echo(result_file.read_text(), nl=False)
             if multiple:
                 click.echo("\n")
-
-        # Output verification results if present
-        verify_result_file = session_dir / "verify_result.json"
-        if verify_result_file.exists():
-            _output_verification(verify_result_file)
 
         if state in {"aborted", "exited"}:
             any_aborted = True

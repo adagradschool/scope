@@ -624,40 +624,6 @@ def context_gate() -> None:
     sys.exit(2)  # Exit code 2 = blocking error in Claude Code
 
 
-def _run_session_verification(session_dir: Path, verify_config_file: Path) -> None:
-    """Run verification steps and write results to session directory.
-
-    Args:
-        session_dir: Path to the session directory.
-        verify_config_file: Path to verify.json config file.
-    """
-    from scope.core.verify import VerifyStep, run_verification
-
-    try:
-        config = orjson.loads(verify_config_file.read_bytes())
-    except (orjson.JSONDecodeError, OSError):
-        return
-
-    steps_data = config if isinstance(config, list) else config.get("steps", [])
-    if not steps_data:
-        return
-
-    steps = [VerifyStep(name=s["name"], command=s["command"]) for s in steps_data]
-    result = run_verification(steps, cwd=Path.cwd())
-
-    # Write structured result
-    result_data = {
-        "passed": result.passed,
-        "summary": result.summary,
-        "steps": [
-            {"name": sr.name, "passed": sr.passed, "output": sr.output}
-            for sr in result.steps
-        ],
-    }
-    verify_result_file = session_dir / "verify_result.json"
-    verify_result_file.write_bytes(orjson.dumps(result_data, option=orjson.OPT_INDENT_2))
-
-
 @main.command()
 def stop() -> None:
     """Handle Stop hook - mark session as done, capture result, and store trajectory."""
@@ -682,11 +648,6 @@ def stop() -> None:
         if claude_uuid:
             claude_session_file = session_dir / "claude_session_id"
             claude_session_file.write_text(claude_uuid)
-
-    # Run verification if config exists
-    verify_config_file = session_dir / "verify.json"
-    if verify_config_file.exists():
-        _run_session_verification(session_dir, verify_config_file)
 
     # Update state to done
     state_file = session_dir / "state"

@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import click
-import orjson
 
 from scope.core.contract import generate_contract
 from scope.core.dag import detect_cycle
@@ -106,8 +105,8 @@ def _send_contract(target: str, contract: str) -> None:
     "--verify",
     "verify_spec",
     default="",
-    help="Verification steps as JSON string or path to JSON file. "
-    'Format: [{"name": "tests", "command": "pytest"}]',
+    help="Comma-separated verification criteria. Can be commands or natural language. "
+    'Example: --verify "pytest tests/,ruff check,all types pass"',
 )
 @click.pass_context
 def spawn(
@@ -151,40 +150,10 @@ def spawn(
             )
             raise SystemExit(1)
 
-    # Parse verify spec
-    verify_steps: list[dict] | None = None
+    # Parse verify criteria
+    verify_criteria: list[str] | None = None
     if verify_spec:
-        verify_spec = verify_spec.strip()
-        # Try as file path first
-        spec_path = Path(verify_spec)
-        if spec_path.is_file():
-            try:
-                verify_steps = orjson.loads(spec_path.read_bytes())
-            except (orjson.JSONDecodeError, OSError) as e:
-                click.echo(f"Error: invalid verify file: {e}", err=True)
-                raise SystemExit(1)
-        else:
-            # Try as JSON string
-            try:
-                verify_steps = orjson.loads(verify_spec.encode())
-            except orjson.JSONDecodeError as e:
-                click.echo(f"Error: invalid verify JSON: {e}", err=True)
-                raise SystemExit(1)
-
-        # Normalize: if it's a dict with "steps", extract the list
-        if isinstance(verify_steps, dict):
-            verify_steps = verify_steps.get("steps", [])
-
-        # Validate structure
-        if not isinstance(verify_steps, list) or not all(
-            isinstance(s, dict) and "name" in s and "command" in s
-            for s in verify_steps
-        ):
-            click.echo(
-                'Error: verify steps must be a list of {"name": ..., "command": ...}',
-                err=True,
-            )
-            raise SystemExit(1)
+        verify_criteria = [c.strip() for c in verify_spec.split(",") if c.strip()]
 
     # Parse and resolve dependencies
     depends_on: list[str] = []
@@ -300,14 +269,9 @@ def spawn(
         contract = generate_contract(
             prompt=prompt,
             depends_on=depends_on if depends_on else None,
-            verify=verify_steps,
+            verify=verify_criteria,
         )
         (session_dir / "contract.md").write_text(contract)
-
-        # Save verify config so the stop hook can find it
-        if verify_steps:
-            verify_config = session_dir / "verify.json"
-            verify_config.write_bytes(orjson.dumps(verify_steps))
 
         # Wait for Claude Code to signal readiness via SessionStart hook
         # Skip if SCOPE_SKIP_READY_CHECK is set (used in tests)

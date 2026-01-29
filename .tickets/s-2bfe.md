@@ -1,6 +1,6 @@
 ---
 id: s-2bfe
-status: in_progress
+status: closed
 deps: []
 links: []
 created: 2026-01-29T19:16:35Z
