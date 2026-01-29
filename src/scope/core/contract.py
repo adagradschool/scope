@@ -51,9 +51,7 @@ def generate_contract(
 
     # Add parent intent
     if parent_intent:
-        sections.append(
-            f"# Parent Intent\n\n{parent_intent}"
-        )
+        sections.append(f"# Parent Intent\n\n{parent_intent}")
 
     # Add prior results
     if prior_results:
