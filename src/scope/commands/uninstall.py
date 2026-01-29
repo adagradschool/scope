@@ -173,7 +173,9 @@ def uninstall(yes: bool, keep_data: bool) -> None:
     # Show what will be removed
     click.echo("This will remove:")
     click.echo("  - Scope hooks from Claude Code settings")
-    click.echo("  - Scope skills (scope, ralph, tdd, rlm, map-reduce, maker-checker, dag)")
+    click.echo(
+        "  - Scope skills (scope, ralph, tdd, rlm, map-reduce, maker-checker, dag)"
+    )
     click.echo("  - ccstatusline status bar configuration")
     click.echo("  - tmux pane-died hook")
 
