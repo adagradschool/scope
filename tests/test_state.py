@@ -357,7 +357,12 @@ def test_save_and_load_loop_state(mock_scope_base):
         max_iterations=3,
         current_iteration=1,
         history=[
-            {"iteration": 0, "doer_session": "0.1", "verdict": "retry", "feedback": "3 tests fail"},
+            {
+                "iteration": 0,
+                "doer_session": "0.1",
+                "verdict": "retry",
+                "feedback": "3 tests fail",
+            },
         ],
     )
 
@@ -406,7 +411,9 @@ def test_save_loop_state_overwrites(mock_scope_base):
     save_session(session)
 
     save_loop_state("0", "pytest", 3, 0, [])
-    save_loop_state("0", "pytest", 3, 1, [{"iteration": 0, "verdict": "retry", "feedback": "fail"}])
+    save_loop_state(
+        "0", "pytest", 3, 1, [{"iteration": 0, "verdict": "retry", "feedback": "fail"}]
+    )
 
     state = load_loop_state("0")
     assert state["current_iteration"] == 1

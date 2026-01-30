@@ -11,7 +11,8 @@ from scope.tui.app import ScopeApp
 from scope.tui.widgets.session_tree import SessionTable, _build_tree
 
 skip_in_scope = pytest.mark.skipif(
-    "SCOPE_SESSION_ID" in os.environ, reason="Textual TUI tests crash tmux in scope sessions"
+    "SCOPE_SESSION_ID" in os.environ,
+    reason="Textual TUI tests crash tmux in scope sessions",
 )
 
 

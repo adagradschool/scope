@@ -7,7 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 from scope.cli import main
-from scope.commands.spawn import PENDING_TASK, _parse_verdict
+from scope.core.loop import PENDING_TASK, parse_verdict
 from tests.helpers import tmux_cmd
 
 
@@ -101,9 +101,7 @@ def test_spawn_with_parent(runner, mock_scope_base, monkeypatch, cleanup_scope_w
     # Create parent directory first
     (mock_scope_base / "sessions" / "0").mkdir(parents=True)
 
-    result = runner.invoke(
-        main, ["spawn", "Child task prompt", "--checker", "true"]
-    )
+    result = runner.invoke(main, ["spawn", "Child task prompt", "--checker", "true"])
 
     assert result.exit_code == 0
     session_id = result.output.strip()
@@ -121,46 +119,46 @@ def test_spawn_with_parent(runner, mock_scope_base, monkeypatch, cleanup_scope_w
 # --- Verdict parsing tests ---
 
 
-def test_parse_verdict_accept():
+def testparse_verdict_accept():
     """Test parsing ACCEPT verdict."""
-    verdict, feedback = _parse_verdict("The code looks good.\n\nACCEPT")
+    verdict, feedback = parse_verdict("The code looks good.\n\nACCEPT")
     assert verdict == "accept"
     assert "code looks good" in feedback
 
 
-def test_parse_verdict_retry():
+def testparse_verdict_retry():
     """Test parsing RETRY verdict."""
-    verdict, feedback = _parse_verdict("Missing error handling.\n\nRETRY")
+    verdict, feedback = parse_verdict("Missing error handling.\n\nRETRY")
     assert verdict == "retry"
     assert "Missing error handling" in feedback
 
 
-def test_parse_verdict_terminate():
+def testparse_verdict_terminate():
     """Test parsing TERMINATE verdict."""
-    verdict, feedback = _parse_verdict("The task is impossible.\n\nTERMINATE")
+    verdict, feedback = parse_verdict("The task is impossible.\n\nTERMINATE")
     assert verdict == "terminate"
 
 
-def test_parse_verdict_case_insensitive():
+def testparse_verdict_case_insensitive():
     """Test verdict parsing is case insensitive."""
-    verdict, _ = _parse_verdict("Looks great!\n\naccept")
+    verdict, _ = parse_verdict("Looks great!\n\naccept")
     assert verdict == "accept"
 
 
-def test_parse_verdict_no_verdict_defaults_retry():
+def testparse_verdict_no_verdict_defaults_retry():
     """Test that missing verdict defaults to retry."""
-    verdict, feedback = _parse_verdict("Some feedback without a verdict")
+    verdict, feedback = parse_verdict("Some feedback without a verdict")
     assert verdict == "retry"
     assert "Some feedback without a verdict" in feedback
 
 
-def test_parse_verdict_terminate_priority():
+def testparse_verdict_terminate_priority():
     """Test TERMINATE takes priority when scanning from end."""
-    verdict, _ = _parse_verdict("ACCEPT this but also TERMINATE")
+    verdict, _ = parse_verdict("ACCEPT this but also TERMINATE")
     assert verdict == "terminate"
 
 
-def test_parse_verdict_last_line_wins():
+def testparse_verdict_last_line_wins():
     """Test the last verdict line wins."""
-    verdict, _ = _parse_verdict("RETRY\nACCEPT")
+    verdict, _ = parse_verdict("RETRY\nACCEPT")
     assert verdict == "accept"

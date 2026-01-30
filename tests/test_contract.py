@@ -283,7 +283,11 @@ def test_generate_contract_phase_and_dependencies():
     assert "# Dependencies" in contract
     assert "# Phase" in contract
     assert "# Task" in contract
-    assert contract.index("# Dependencies") < contract.index("# Phase") < contract.index("# Task")
+    assert (
+        contract.index("# Dependencies")
+        < contract.index("# Phase")
+        < contract.index("# Task")
+    )
 
 
 def test_generate_contract_parent_intent_and_prior_results():
@@ -297,7 +301,11 @@ def test_generate_contract_parent_intent_and_prior_results():
     assert "# Parent Intent" in contract
     assert "# Prior Results" in contract
     assert "# Task" in contract
-    assert contract.index("# Parent Intent") < contract.index("# Prior Results") < contract.index("# Task")
+    assert (
+        contract.index("# Parent Intent")
+        < contract.index("# Prior Results")
+        < contract.index("# Task")
+    )
 
 
 # --- Verification tests ---
@@ -364,7 +372,15 @@ def test_generate_contract_full_with_verify():
     scope_idx = contract.index("# File Scope")
     verify_idx = contract.index("# Verification")
 
-    assert deps_idx < phase_idx < intent_idx < results_idx < task_idx < scope_idx < verify_idx
+    assert (
+        deps_idx
+        < phase_idx
+        < intent_idx
+        < results_idx
+        < task_idx
+        < scope_idx
+        < verify_idx
+    )
 
 
 # --- Checker contract tests ---

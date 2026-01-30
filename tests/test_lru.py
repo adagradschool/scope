@@ -2,7 +2,6 @@
 
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -31,6 +30,7 @@ def mock_lru_cache(tmp_path, monkeypatch):
 @pytest.fixture
 def mock_scope_and_lru(tmp_path, monkeypatch):
     """Mock both scope base and LRU cache for full isolation."""
+
     # Mock scope base
     def mock_scope_base():
         return tmp_path / "scope"
@@ -351,9 +351,11 @@ class TestConfig:
 
     def test_set_config(self, tmp_path, monkeypatch):
         """Test set_max_completed_sessions writes config."""
-        import orjson
 
-        from scope.core.config import get_max_completed_sessions, set_max_completed_sessions
+        from scope.core.config import (
+            get_max_completed_sessions,
+            set_max_completed_sessions,
+        )
 
         config_path = tmp_path / "config.json"
         monkeypatch.setattr(
@@ -385,7 +387,6 @@ class TestClaudeSessionId:
         from scope.core.state import (
             load_claude_session_id,
             save_claude_session_id,
-            save_session,
         )
 
         # Create a session first
@@ -409,7 +410,7 @@ class TestClaudeSessionId:
 
     def test_load_nonexistent(self, mock_scope_base):
         """Test loading nonexistent Claude session ID."""
-        from scope.core.state import load_claude_session_id, save_session
+        from scope.core.state import load_claude_session_id
 
         # Create a session without Claude ID
         session = Session(
@@ -465,7 +466,10 @@ class TestExtractClaudeSessionId:
         transcript = tmp_path / "test.jsonl"
         entries = [
             {"type": "user", "message": {"content": "Hello"}},
-            {"type": "assistant", "message": {"content": [{"type": "text", "text": "Hi"}]}},
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "Hi"}]},
+            },
         ]
         with transcript.open("w") as f:
             for entry in entries:
@@ -482,7 +486,6 @@ class TestExtractClaudeSessionId:
         result = extract_claude_session_id("/nonexistent/path.jsonl")
 
         assert result is None
-
 
 
 def _add_session_concurrent(args: tuple) -> str:
@@ -511,7 +514,7 @@ def test_lru_concurrent_adds(tmp_path):
     """
     from concurrent.futures import ProcessPoolExecutor
 
-    from scope.core.lru import _get_lru_cache_path, _get_lru_lock_path, load_lru_cache
+    from scope.core.lru import load_lru_cache
 
     cache_path = tmp_path / "lru_cache.json"
     lock_path = tmp_path / "lru_cache.lock"

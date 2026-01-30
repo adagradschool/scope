@@ -41,10 +41,14 @@ def cleanup_scope_sessions(cleanup_scope_windows):
     Depends on cleanup_scope_windows to set up socket isolation.
     """
     for i in range(10):
-        subprocess.run(tmux_cmd(["kill-session", "-t", f"scope-{i}"]), capture_output=True)
+        subprocess.run(
+            tmux_cmd(["kill-session", "-t", f"scope-{i}"]), capture_output=True
+        )
     yield
     for i in range(10):
-        subprocess.run(tmux_cmd(["kill-session", "-t", f"scope-{i}"]), capture_output=True)
+        subprocess.run(
+            tmux_cmd(["kill-session", "-t", f"scope-{i}"]), capture_output=True
+        )
 
 
 @pytest.fixture
@@ -216,7 +220,9 @@ def test_get_descendants_with_children(mock_scope_base):
     assert descendant_ids.index("0.0.0") < descendant_ids.index("0.0")
 
 
-def test_abort_with_children_confirmation_declined(runner, mock_scope_base, cleanup_scope_windows):
+def test_abort_with_children_confirmation_declined(
+    runner, mock_scope_base, cleanup_scope_windows
+):
     """Test abort with children shows confirmation and can be declined."""
     # Create parent and child
     for session_id, parent in [("0", ""), ("0.0", "0")]:
@@ -241,7 +247,9 @@ def test_abort_with_children_confirmation_declined(runner, mock_scope_base, clea
     assert load_session("0.0") is not None
 
 
-def test_abort_with_children_confirmation_accepted(runner, mock_scope_base, cleanup_scope_windows):
+def test_abort_with_children_confirmation_accepted(
+    runner, mock_scope_base, cleanup_scope_windows
+):
     """Test abort with children deletes all when confirmed."""
     # Create parent and children
     for session_id, parent in [("0", ""), ("0.0", "0"), ("0.1", "0")]:
@@ -258,7 +266,10 @@ def test_abort_with_children_confirmation_accepted(runner, mock_scope_base, clea
     # Accept confirmation
     result = runner.invoke(main, ["abort", "0"], input="y\n")
     assert result.exit_code == 0
-    assert "Aborted child session 0.0" in result.output or "Aborted child session 0.1" in result.output
+    assert (
+        "Aborted child session 0.0" in result.output
+        or "Aborted child session 0.1" in result.output
+    )
     assert "Aborted session 0" in result.output
 
     # All sessions should be deleted
@@ -293,7 +304,9 @@ def test_abort_with_children_yes_flag(runner, mock_scope_base, cleanup_scope_win
     assert load_session("0.0") is None
 
 
-def test_abort_without_children_no_confirmation(runner, mock_scope_base, cleanup_scope_windows):
+def test_abort_without_children_no_confirmation(
+    runner, mock_scope_base, cleanup_scope_windows
+):
     """Test abort without children doesn't show confirmation."""
     # Create session without children
     session = Session(
@@ -332,6 +345,7 @@ def test_abort_kills_tmux_window(runner, mock_scope_base, cleanup_scope_windows)
 
     # Get the scope session name from env (set by cleanup_scope_windows)
     import os
+
     scope_session = os.environ.get("SCOPE_TMUX_SESSION", "scope")
 
     # Ensure the scope session exists

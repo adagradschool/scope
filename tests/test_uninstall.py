@@ -157,9 +157,7 @@ def test_cli_uninstall_with_yes_flag(
     # Setup mocks for hooks and tmux
     monkeypatch.setattr("scope.commands.uninstall.uninstall_hooks", lambda: None)
     monkeypatch.setattr("scope.commands.uninstall.uninstall_tmux_hooks", lambda: None)
-    monkeypatch.setattr(
-        "scope.commands.uninstall.find_scope_binaries", lambda: []
-    )
+    monkeypatch.setattr("scope.commands.uninstall.find_scope_binaries", lambda: [])
 
     # Create some scope data
     mock_scope_dir.mkdir()
@@ -179,9 +177,7 @@ def test_cli_uninstall_with_keep_data_flag(
     # Setup mocks
     monkeypatch.setattr("scope.commands.uninstall.uninstall_hooks", lambda: None)
     monkeypatch.setattr("scope.commands.uninstall.uninstall_tmux_hooks", lambda: None)
-    monkeypatch.setattr(
-        "scope.commands.uninstall.find_scope_binaries", lambda: []
-    )
+    monkeypatch.setattr("scope.commands.uninstall.find_scope_binaries", lambda: [])
 
     # Create scope data that should be preserved
     mock_scope_dir.mkdir()
@@ -202,9 +198,7 @@ def test_cli_uninstall_with_keep_data_flag(
 
 def test_cli_uninstall_without_confirmation_exits(runner, monkeypatch):
     """Test CLI uninstall command exits when confirmation is declined."""
-    monkeypatch.setattr(
-        "scope.commands.uninstall.find_scope_binaries", lambda: []
-    )
+    monkeypatch.setattr("scope.commands.uninstall.find_scope_binaries", lambda: [])
 
     result = runner.invoke(uninstall, input="n\n")
 
@@ -212,7 +206,9 @@ def test_cli_uninstall_without_confirmation_exits(runner, monkeypatch):
     assert "Uninstall cancelled" in result.output
 
 
-def test_cli_uninstall_shows_binary_note(runner, mock_claude_dir, monkeypatch, tmp_path):
+def test_cli_uninstall_shows_binary_note(
+    runner, mock_claude_dir, monkeypatch, tmp_path
+):
     """Test CLI uninstall shows note about binaries."""
     # Setup mocks
     monkeypatch.setattr("scope.commands.uninstall.uninstall_hooks", lambda: None)
@@ -233,4 +229,3 @@ def test_cli_uninstall_shows_binary_note(runner, mock_claude_dir, monkeypatch, t
     assert result.exit_code == 0
     assert "binaries were found" in result.output
     assert "pip uninstall scopeai" in result.output
-
