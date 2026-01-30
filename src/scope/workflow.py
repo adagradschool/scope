@@ -292,12 +292,6 @@ def _read_loop_result(session_id: str, phase: Phase) -> LoopResult:
     # Read loop state
     loop_state = load_loop_state(session_id)
     history = loop_state.get("history", []) if loop_state else []
-    max_iterations = (
-        loop_state.get("max_iterations", phase.max_iterations)
-        if loop_state
-        else phase.max_iterations
-    )
-
     # Check for exit
     session = load_session(session_id)
     if session and session.state == "exited":
