@@ -225,9 +225,7 @@ def _build_phase_task(
 
     if phase.file_scope:
         constraints = "\n".join(f"- `{p}`" for p in phase.file_scope)
-        sections.append(
-            f"# File Scope\n\nOnly modify files within:\n{constraints}"
-        )
+        sections.append(f"# File Scope\n\nOnly modify files within:\n{constraints}")
 
     if phase.verify:
         checks = "\n".join(f"- {v}" for v in phase.verify)
@@ -251,16 +249,12 @@ def _collect_prior_results(
         # Explicit pipe sources
         for source_name in phase.pipe_from:
             if source_name in results and results[source_name].result_text:
-                prior.append(
-                    f"**{source_name}**: {results[source_name].result_text}"
-                )
+                prior.append(f"**{source_name}**: {results[source_name].result_text}")
     elif index > 0:
         # Default: pipe from immediately preceding phase
         prev_name = phases[index - 1].name
         if prev_name in results and results[prev_name].result_text:
-            prior.append(
-                f"**{prev_name}**: {results[prev_name].result_text}"
-            )
+            prior.append(f"**{prev_name}**: {results[prev_name].result_text}")
 
     return prior
 
