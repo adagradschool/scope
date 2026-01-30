@@ -1,6 +1,6 @@
 """Resume command for scope.
 
-Resumes an evicted session by spawning a new tmux window with `claude --resume <uuid>`.
+Resumes a completed session by spawning a new tmux window with `claude --resume <uuid>`.
 """
 
 import os
@@ -9,13 +9,10 @@ from pathlib import Path
 
 import click
 
-from scope.core.lru import remove_session
-from scope.core.project import get_project_identifier
 from scope.core.state import (
     load_claude_session_id,
     load_session,
     resolve_id,
-    update_state,
 )
 from scope.core.tmux import (
     TmuxError,
@@ -41,10 +38,10 @@ from scope.hooks.install import install_tmux_hooks
 def resume(
     ctx: click.Context, session_ref: str, dangerously_skip_permissions: bool
 ) -> None:
-    """Resume an evicted scope session.
+    """Resume a completed scope session.
 
-    Restarts an evicted session by spawning a new tmux window with `claude --resume <uuid>`.
-    The session state will be updated from "evicted" to "running".
+    Restarts a done session by spawning a new tmux window with `claude --resume <uuid>`.
+    The session state remains "done".
 
     SESSION_REF is the session ID or alias to resume (e.g., "0" or "0.1").
 
@@ -76,11 +73,11 @@ def resume(
         click.echo(f"Error: Session {session_id} not found", err=True)
         raise SystemExit(1)
 
-    # Check if session is evicted
-    if session.state != "evicted":
+    # Check if session is done (resumable)
+    if session.state != "done":
         click.echo(
-            f"Error: Session {session_id} is not evicted (state: {session.state})\n"
-            f"  Fix: Only evicted sessions can be resumed. Use 'scope spawn' for new sessions.",
+            f"Error: Session {session_id} is not done (state: {session.state})\n"
+            f"  Fix: Only done sessions can be resumed. Use 'scope spawn' for new sessions.",
             err=True,
         )
         raise SystemExit(1)
@@ -101,12 +98,6 @@ def resume(
     window_name = tmux_window_name(session_id)
     tmux_session = get_scope_session()
     if has_window_in_session(tmux_session, window_name):
-        # Window exists for an evicted session — a prior resume partially
-        # succeeded (window created but state not updated).  Recover by
-        # updating state and pointing the user to the existing window.
-        update_state(session_id, "running")
-        project_id = get_project_identifier()
-        remove_session(project_id, session_id)
         click.echo(f"Resumed session {session_id} (recovered existing window)")
         return
 
@@ -133,14 +124,6 @@ def resume(
             cwd=Path.cwd(),
             env=env,
         )
-
-        # Update session state to running immediately after window creation
-        # to keep state consistent even if subsequent operations fail
-        update_state(session_id, "running")
-
-        # Update LRU cache: remove from completed cache since it's now running
-        project_id = get_project_identifier()
-        remove_session(project_id, session_id)
 
         # Set pane option for session tracking
         try:

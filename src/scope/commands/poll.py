@@ -106,7 +106,7 @@ def _build_status(session_id: str, include_trajectory: bool = False) -> dict:
             if line.strip():
                 activity = line.strip()
         if activity:
-            if session.state in {"done", "aborted", "exited", "evicted"}:
+            if session.state in {"done", "aborted", "exited"}:
                 activity = past_tense_activity(activity)
             result["activity"] = activity
 

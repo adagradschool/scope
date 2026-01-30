@@ -471,7 +471,7 @@ def copy_trajectory(transcript_path: str, session_dir: Path) -> bool:
 def extract_claude_session_id(transcript_path: str) -> str | None:
     """Extract the Claude sessionId from a transcript JSONL file.
 
-    The sessionId is used for `claude --resume <uuid>` to continue an evicted session.
+    The sessionId is used for `claude --resume <uuid>` to continue a session.
 
     Args:
         transcript_path: Path to the conversation transcript (.jsonl)

@@ -2,7 +2,7 @@
 
 Keeps running agents active indefinitely, but caps completed agents at a
 configurable limit. Evicted sessions have their tmux windows killed but
-their data is preserved on disk for resumption via `claude --resume`.
+remain in "done" state with data preserved on disk.
 
 Global LRU cache stored at ~/.scope/lru_cache.json
 Schema:
@@ -211,14 +211,17 @@ def remove_session(project_id: str, session_id: str) -> None:
 
 
 def evict_session(project_id: str, session_id: str) -> bool:
-    """Evict a session by killing its tmux window and updating state.
+    """Evict a session by killing its tmux window.
+
+    The session state remains "done" on disk; only the tmux window is killed
+    and the entry is removed from the LRU cache.
 
     Args:
         project_id: The project identifier (e.g., "myrepo-abc12345").
         session_id: The scope session ID (e.g., "0", "0.1").
 
     Returns:
-        True if session was evicted, False if tmux window didn't exist.
+        True if the tmux window was killed, False if it didn't exist.
     """
 
     # Kill tmux window if it exists
@@ -235,20 +238,7 @@ def evict_session(project_id: str, session_id: str) -> bool:
         except Exception:
             pass  # Window may have already been killed
 
-    # Update session state to "evicted"
-    # We need to find the project path from project_id to get the right scope dir
-    # This is tricky since we store by project_id, not path
-    # For now, we'll iterate over repos to find the matching one
-    repos_dir = Path.home() / ".scope" / "repos"
-    if repos_dir.exists():
-        for repo_dir in repos_dir.iterdir():
-            if repo_dir.is_dir() and repo_dir.name == project_id:
-                session_dir = repo_dir / "sessions" / session_id
-                if session_dir.exists():
-                    (session_dir / "state").write_text("evicted")
-                    break
-
-    # Remove from LRU cache
+    # Remove from LRU cache (session stays "done" on disk)
     remove_session(project_id, session_id)
 
     return window_killed

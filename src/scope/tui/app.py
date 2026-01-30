@@ -10,8 +10,8 @@ from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Static
 
-from scope.core.session import Session
 from scope.core.abort import abort_session_tree, session_tree_ids
+from scope.core.session import Session
 from scope.core.state import (
     get_global_scope_base,
     get_root_path,
@@ -20,29 +20,28 @@ from scope.core.state import (
     load_session,
     next_id,
     save_session,
-    update_state,
 )
 from scope.core.tmux import (
     TmuxError,
     _tmux_cmd,
     attach_in_split,
     create_window,
+    detach_client,
     detach_to_window,
     enable_mouse,
-    get_current_session,
     get_current_pane_id,
-    get_scope_session,
+    get_current_session,
     get_right_pane_session_id,
+    get_scope_session,
     has_window,
     has_window_in_session,
     in_tmux,
-    detach_client,
     pane_target_for_window,
     rename_current_window,
+    select_pane,
     send_keys,
     set_current_window_option,
     set_pane_option,
-    select_pane,
     tmux_window_name,
 )
 from scope.hooks.install import install_tmux_hooks
@@ -344,8 +343,10 @@ class ScopeApp(App):
             self.notify(f"Session {session_id} not found", severity="error")
             return
 
-        # Handle evicted sessions - resume them
-        if session.state == "evicted":
+        # Handle done sessions whose tmux window was killed (evicted from LRU) — resume them
+        if session.state == "done" and not has_window_in_session(
+            get_scope_session(), window_name
+        ):
             self._resume_evicted_session(session_id, window_name, current_pane_id)
             return
 
@@ -374,11 +375,8 @@ class ScopeApp(App):
     def _resume_evicted_session(
         self, session_id: str, window_name: str, current_pane_id: str | None
     ) -> None:
-        """Resume an evicted session by spawning a new tmux window with claude --resume."""
+        """Resume a done session by spawning a new tmux window with claude --resume."""
         import shlex
-
-        from scope.core.lru import remove_session
-        from scope.core.project import get_project_identifier
 
         # Load Claude session UUID
         claude_uuid = load_claude_session_id(session_id)
@@ -389,13 +387,9 @@ class ScopeApp(App):
             )
             return
 
-        # Check if tmux window already exists — if so, recover from a
-        # prior partial resume (window created but state not updated)
+        # Check if tmux window already exists
         tmux_session = get_scope_session()
         if has_window_in_session(tmux_session, window_name):
-            update_state(session_id, "running")
-            project_id = get_project_identifier()
-            remove_session(project_id, session_id)
             self.refresh_sessions()
             self.notify(f"Resumed session {session_id} (recovered existing window)")
             return
@@ -418,14 +412,6 @@ class ScopeApp(App):
                 cwd=Path.cwd(),
                 env=env,
             )
-
-            # Update session state to running immediately after window creation
-            # to keep state consistent even if subsequent operations fail
-            update_state(session_id, "running")
-
-            # Remove from LRU cache since it's now running
-            project_id = get_project_identifier()
-            remove_session(project_id, session_id)
 
             # Set pane option for session tracking
             try:

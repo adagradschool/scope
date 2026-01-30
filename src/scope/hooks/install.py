@@ -91,7 +91,7 @@ def _is_scope_hook(hook_entry: dict) -> bool:
     if not hooks:
         return False
     command = hooks[0].get("command", "")
-    return command.startswith("scope-hook") or "scope spawn" in command
+    return "scope-hook" in command or "scope spawn" in command
 
 
 def install_hooks() -> None:
@@ -167,7 +167,11 @@ Every `scope spawn` runs a **doer-checker loop**:
 2. A checker (spawned with `--checker`) reviews the work.
 3. If the checker finds issues, the doer retries (up to `--max-iterations`).
 
-Use `--checker "prompt"` to attach verification to any spawn. The checker receives the doer's output and must exit 0 (pass) or non-zero (fail).
+`--checker` is **required** — every spawn MUST include it. The spawn will fail without it. Use a shell command (exit 0 = pass, non-zero = fail) or an agent checker (prefix with `agent:`).
+
+Examples:
+- `--checker "pytest tests/"` — shell command checker
+- `--checker "agent: Verify the fix is correct and minimal. ACCEPT or RETRY."` — agent checker
 
 ## DAGs: Dependency Ordering
 
@@ -185,8 +189,8 @@ scope wait test lint
 ## Context Limit (100k tokens)
 
 When blocked by context gate:
-- **HANDOFF**: `scope spawn "Continue: [progress] + [remaining work]"`
-- **SPLIT**: `scope spawn "subtask 1"` + `scope spawn "subtask 2"` + `scope wait`
+- **HANDOFF**: `scope spawn "Continue: [progress] + [remaining work]" --checker "agent: Verify work completed. ACCEPT/RETRY."`
+- **SPLIT**: spawn subtasks with `--checker`, then `scope wait`
 
 ## Recursion Guard
 
@@ -204,10 +208,10 @@ Batch work into 2-3 chunks rather than spawning per-item.
 ## CLI Quick Reference
 
 ```
-scope spawn "task" --checker "verify"  # Start subagent with checker
-scope spawn --id=X --after=Y          # Dependency ordering
-scope spawn --plan                     # Start in plan mode
-scope spawn --model=X                  # Use specific model
+scope spawn "task" --checker "cmd"     # Start subagent (--checker REQUIRED)
+scope spawn "task" --checker "agent: Review for correctness. ACCEPT/RETRY."
+scope spawn --id=X --after=Y --checker "cmd"  # With dependency ordering
+scope spawn --plan --checker "cmd"     # Start in plan mode
 scope poll [id]                        # Check status (non-blocking)
 scope wait [id]                        # Block until done
 scope abort <id>                       # Kill a session

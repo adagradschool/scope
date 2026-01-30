@@ -275,8 +275,8 @@ def test_check_and_evict_with_override_limit(mock_lru_cache, monkeypatch):
     assert len(cache["entries"]) == 1
 
 
-def test_evict_session_updates_state(mock_scope_and_lru, monkeypatch):
-    """Test evict_session updates session state to evicted."""
+def test_evict_session_preserves_done_state(mock_scope_and_lru, monkeypatch):
+    """Test evict_session keeps session state as done."""
     from scope.core.lru import evict_session
 
     # Mock tmux functions
@@ -292,7 +292,7 @@ def test_evict_session_updates_state(mock_scope_and_lru, monkeypatch):
 
     evict_session(project_id, session_id)
 
-    assert (session_dir / "state").read_text() == "evicted"
+    assert (session_dir / "state").read_text() == "done"
 
 
 def test_evict_session_kills_tmux_window(mock_scope_and_lru, monkeypatch):
@@ -483,47 +483,6 @@ class TestExtractClaudeSessionId:
 
         assert result is None
 
-
-class TestSessionEvictedState:
-    """Tests for evicted session state."""
-
-    def test_evicted_is_valid_state(self):
-        """Test that evicted is a valid session state."""
-        from scope.core.session import VALID_STATES
-
-        assert "evicted" in VALID_STATES
-
-    def test_session_with_evicted_state(self):
-        """Test creating session with evicted state."""
-        session = Session(
-            id="0",
-            task="Test",
-            parent="",
-            state="evicted",
-            tmux_session="w0",
-            created_at=datetime.now(timezone.utc),
-        )
-
-        assert session.state == "evicted"
-
-    def test_save_and_load_evicted_session(self, mock_scope_base):
-        """Test saving and loading evicted session."""
-        from scope.core.state import load_session
-
-        session = Session(
-            id="0",
-            task="Test",
-            parent="",
-            state="evicted",
-            tmux_session="w0",
-            created_at=datetime.now(timezone.utc),
-        )
-        save_session(session)
-
-        loaded = load_session("0")
-
-        assert loaded is not None
-        assert loaded.state == "evicted"
 
 
 def _add_session_concurrent(args: tuple) -> str:
