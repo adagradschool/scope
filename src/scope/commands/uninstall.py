@@ -21,6 +21,7 @@ from scope.hooks.install import (
     uninstall_tmux_hooks,
 )
 
+
 def get_scope_data_dir() -> Path:
     """Get the path to scope's data directory."""
     return Path.home() / ".scope"
