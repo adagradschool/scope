@@ -224,6 +224,36 @@ def test_task_hook_uses_summarizer(runner, setup_session, monkeypatch):
     assert "long prompt" in called_with[0]
 
 
+def test_task_hook_skips_slash_commands(runner, setup_session):
+    """Test task hook ignores slash command prompts like /scope."""
+    session_dir = setup_session
+    task_file = session_dir / "task"
+    task_file.write_text("(pending...)")
+
+    for cmd in ["/scope", "/scope some args here", "/help", "/commit"]:
+        task_file.write_text("(pending...)")
+        input_json = orjson.dumps({"prompt": cmd}).decode()
+        result = runner.invoke(main, ["task"], input=input_json)
+        assert result.exit_code == 0
+        assert task_file.read_text() == "(pending...)", f"Should skip {cmd!r}"
+
+
+def test_task_hook_skips_short_prompts(runner, setup_session):
+    """Test task hook ignores prompts too short to be a real task."""
+    session_dir = setup_session
+    task_file = session_dir / "task"
+    task_file.write_text("(pending...)")
+
+    input_json = orjson.dumps({
+        "prompt": "yes"
+    }).decode()
+
+    result = runner.invoke(main, ["task"], input=input_json)
+
+    assert result.exit_code == 0
+    assert task_file.read_text() == "(pending...)"
+
+
 def test_task_hook_reactivates_done_session(runner, setup_session):
     """Test task hook transitions done -> running when new prompt submitted.
 

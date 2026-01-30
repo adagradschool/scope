@@ -3,8 +3,6 @@
 Blocks until session(s) complete (done or aborted).
 """
 
-import os
-import subprocess
 from pathlib import Path
 
 import click
@@ -222,46 +220,25 @@ def _output_summary(session_id: str, state: str | None, multiple: bool) -> None:
 def _summarize_result(task: str, result_text: str, status: str) -> str:
     """Summarize a session result into a natural language description using Claude CLI.
 
-    Same pattern as summarize_task in hooks/handler.py: shell out to claude -p
-    with a focused prompt, fall back to the task name on failure.
+    Delegates to the shared summarize utility in scope.core.summarize.
     """
-    fallback = task
+    from scope.core.summarize import summarize
 
     if not result_text:
         if status == "ABORT":
             return f"{task} — aborted before producing a result"
         return task
 
-    try:
-        env = os.environ.copy()
-        env.pop("SCOPE_SESSION_ID", None)
-
-        result = subprocess.run(
-            [
-                "claude",
-                "-p",
-                "You are a progress summarizer. Given a task and its result, output a 1-2 sentence "
-                "summary of what was accomplished and what is left to do. Be specific and concise. "
-                "No quotes, no markdown.\n\n"
-                f"Task: {task}\n\n"
-                f"Result:\n{result_text[:2000]}\n\n"
-                "Summary:",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env,
-        )
-
-        if result.returncode == 0 and result.stdout.strip():
-            summary = result.stdout.strip()
-            if len(summary) <= 300:
-                return summary
-
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        pass
-
-    return fallback
+    return summarize(
+        f"Task: {task}\n\nResult:\n{result_text[:2000]}\n\nSummary:",
+        goal=(
+            "You are a progress summarizer. Given a task and its result, output a 1-2 sentence "
+            "summary of what was accomplished and what is left to do. Be specific and concise. "
+            "No quotes, no markdown."
+        ),
+        max_length=300,
+        fallback=task,
+    )
 
 
 def _detect_test_status(session_dir: Path) -> str:

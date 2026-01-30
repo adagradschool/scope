@@ -543,7 +543,7 @@ def _run_loop(
         # Wait for current doer to complete
         _wait_for_sessions([current_doer_id])
 
-        # Read doer result
+        # Read doer result and produce a summary for downstream consumers
         doer_result = _read_result(scope_dir, current_doer_id)
 
         # Check if doer failed/aborted — no point running checker
@@ -556,10 +556,24 @@ def _run_loop(
             )
             break
 
-        # Run checker
+        from scope.core.summarize import summarize
+
+        task_name = session.task if session and session.task else prompt[:80]
+        doer_summary = summarize(
+            f"Task: {task_name}\n\nResult:\n{doer_result[:2000]}\n\nSummary:",
+            goal=(
+                "You are a progress summarizer. Given a task and its result, output a 1-2 sentence "
+                "summary of what was accomplished and what is left to do. Be specific and concise. "
+                "No quotes, no markdown."
+            ),
+            max_length=300,
+            fallback=doer_result[:300] if doer_result else task_name,
+        )
+
+        # Run checker with summarized result
         verdict, feedback = _run_checker(
             checker=checker,
-            doer_result=doer_result,
+            doer_result=doer_summary,
             iteration=iteration,
             history=history,
             checker_model=checker_model,
@@ -608,19 +622,21 @@ def _run_loop(
             )
             return
 
-        # Build retry prompt with checker feedback
+        # Build retry prompt with summary + checker feedback
+        # (reuse doer_summary computed above for the checker)
         retry_prompt = (
             f"{prompt}\n\n"
-            f"# Checker Feedback (iteration {iteration})\n\n"
+            f"# Previous Attempt Summary (iteration {iteration})\n\n"
+            f"{doer_summary}\n\n"
+            f"# Checker Feedback\n\n"
             f"The checker reviewed your previous output and requested a retry:\n\n"
             f"{feedback}\n\n"
             f"Please address this feedback and try again."
         )
 
-        # Spawn next doer iteration by piping from previous
+        # Spawn next doer iteration (summary replaces full result pipe)
         current_doer_id = _spawn_session(
             prompt=retry_prompt,
-            pipe_from=current_doer_id,
             dangerously_skip_permissions=dangerously_skip_permissions,
             parent_session_id=session_id,
         )

@@ -163,7 +163,7 @@ def summarize_task(prompt: str) -> str:
     Returns:
         A 3-5 word summary, or truncated first line as fallback
     """
-    import subprocess
+    from scope.core.summarize import summarize
 
     # Fallback: truncated first line
     first_line = prompt.split("\n")[0].strip()
@@ -172,36 +172,15 @@ def summarize_task(prompt: str) -> str:
     else:
         fallback = first_line
 
-    try:
-        # Use env to prevent hook recursion - unset SCOPE_SESSION_ID
-        # so the claude call doesn't trigger our hooks
-        env = os.environ.copy()
-        env.pop("SCOPE_SESSION_ID", None)
-
-        result = subprocess.run(
-            [
-                "claude",
-                "-p",
-                "You are a task title generator. Given a user request, output ONLY a 3-5 word title. "
-                "No explanation, no execution, no quotes, no punctuation. Just the title.\n\n"
-                f"User request: {prompt[:500]}\n\nTitle:",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env,
-        )
-
-        if result.returncode == 0 and result.stdout.strip():
-            summary = result.stdout.strip()
-            # Sanity check: should be short
-            if len(summary) <= 60:
-                return summary
-
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        pass
-
-    return fallback
+    return summarize(
+        f"User request: {prompt[:500]}\n\nTitle:",
+        goal=(
+            "You are a task title generator. Given a user request, output ONLY a 3-5 word title. "
+            "No explanation, no execution, no quotes, no punctuation. Just the title."
+        ),
+        max_length=60,
+        fallback=fallback,
+    )
 
 
 @main.command()
@@ -231,6 +210,12 @@ def task() -> None:
         if current_task and current_task != "(pending...)":
             # Task already set, don't overwrite
             return
+
+    # Skip slash commands and short uninformative prompts — wait for a
+    # substantive prompt (e.g. the contract) before inferring a task name.
+    stripped = prompt.strip()
+    if stripped.startswith("/") or len(stripped) < 20:
+        return
 
     summary = summarize_task(prompt)
     task_file.write_text(summary)
