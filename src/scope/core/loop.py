@@ -210,7 +210,8 @@ def run_agent_checker(
     history: list[dict],
     checker_model: str,
     dangerously_skip_permissions: bool,
-) -> tuple[str, str]:
+    parent_session_id: str = "",
+) -> tuple[str, str, str]:
     """Run an agent checker as a tmux session.
 
     Spawns a full scope session with the checker contract so it's
@@ -227,6 +228,7 @@ def run_agent_checker(
         prompt=contract,
         model=checker_model,
         dangerously_skip_permissions=dangerously_skip_permissions,
+        parent_session_id=parent_session_id,
     )
 
     # Wait for checker session to finish
@@ -239,13 +241,15 @@ def run_agent_checker(
         return (
             "retry",
             f"Checker session {checker_id} ended with state '{session.state}'",
+            checker_id,
         )
 
     response = read_result(scope_dir, checker_id)
     if not response:
-        return ("retry", f"Checker session {checker_id} produced no output")
+        return ("retry", f"Checker session {checker_id} produced no output", checker_id)
 
-    return parse_verdict(response)
+    verdict, feedback = parse_verdict(response)
+    return (verdict, feedback, checker_id)
 
 
 def run_checker(
@@ -255,14 +259,16 @@ def run_checker(
     history: list[dict],
     checker_model: str,
     dangerously_skip_permissions: bool,
-) -> tuple[str, str]:
-    """Run the checker and return (verdict, feedback).
+    parent_session_id: str = "",
+) -> tuple[str, str, str]:
+    """Run the checker and return (verdict, feedback, checker_session_id).
 
     Command checker: runs as subprocess, exit 0 = accept, non-zero = retry.
     Agent checker (prefix "agent:"): spawns a tmux session to evaluate.
 
     Returns:
-        Tuple of (verdict, feedback) where verdict is "accept", "retry", or "terminate".
+        Tuple of (verdict, feedback, checker_session_id).
+        checker_session_id is empty for command checkers.
     """
     if checker.startswith("agent:"):
         return run_agent_checker(
@@ -272,9 +278,11 @@ def run_checker(
             history=history,
             checker_model=checker_model,
             dangerously_skip_permissions=dangerously_skip_permissions,
+            parent_session_id=parent_session_id,
         )
     else:
-        return run_command_checker(command=checker)
+        verdict, feedback = run_command_checker(command=checker)
+        return (verdict, feedback, "")
 
 
 def run_loop(
@@ -350,24 +358,26 @@ def run_loop(
         )
 
         # Run checker with summarized result
-        verdict, feedback = run_checker(
+        verdict, feedback, checker_session_id = run_checker(
             checker=checker,
             doer_result=doer_summary,
             iteration=iteration,
             history=history,
             checker_model=checker_model,
             dangerously_skip_permissions=dangerously_skip_permissions,
+            parent_session_id=session_id,
         )
 
         # Record history
-        history.append(
-            {
-                "iteration": iteration,
-                "doer_session": current_doer_id,
-                "verdict": verdict,
-                "feedback": feedback,
-            }
-        )
+        entry: dict = {
+            "iteration": iteration,
+            "doer_session": current_doer_id,
+            "verdict": verdict,
+            "feedback": feedback,
+        }
+        if checker_session_id:
+            entry["checker_session"] = checker_session_id
+        history.append(entry)
 
         # Persist loop state
         save_loop_state(

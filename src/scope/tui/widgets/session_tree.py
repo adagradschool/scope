@@ -135,32 +135,55 @@ def _build_tree(
                 )
 
                 if session.id not in collapsed:
+                    # Sort history by iteration number
+                    sorted_history = sorted(
+                        history, key=lambda h: h.get("iteration", 0)
+                    )
+
+                    # Build checker ID lookup from history
+                    checker_by_iter: dict[int, str] = {}
+                    for entry in sorted_history:
+                        cs = entry.get("checker_session")
+                        if cs:
+                            checker_by_iter[entry.get("iteration", 0)] = str(cs)
+
                     # Iteration 0: the loop session itself is the first doer
-                    iter_label = "Iter 0"
                     result.append(
                         TreeNode(
                             session=session,
                             depth=depth + 1,
                             has_children=False,
                             node_type="iteration",
-                            iteration_label=iter_label,
+                            iteration_label="Iter 0",
                             mode="do",
                         )
                     )
 
-                    # Remaining iterations from history — match children
-                    # Sort history by iteration number
-                    sorted_history = sorted(
-                        history, key=lambda h: h.get("iteration", 0)
+                    # Iteration 0 checker (if recorded in history)
+                    iter0_checker_id = checker_by_iter.get(0)
+                    iter0_checker = (
+                        session_by_id.get(iter0_checker_id)
+                        if iter0_checker_id
+                        else None
                     )
+                    if iter0_checker:
+                        result.append(
+                            TreeNode(
+                                session=iter0_checker,
+                                depth=depth + 1,
+                                has_children=False,
+                                node_type="iteration",
+                                iteration_label="check",
+                                mode="check",
+                            )
+                        )
 
+                    # Remaining iterations — emit do + check pairs
                     for entry in sorted_history:
                         ds_id = str(entry.get("doer_session", ""))
                         iteration_num = entry.get("iteration", 0)
-                        # iteration 0 is the original session (already emitted)
                         if iteration_num == 0:
                             continue
-                        iter_label = f"Iter {iteration_num}"
                         child_session = session_by_id.get(ds_id)
                         if child_session:
                             result.append(
@@ -169,14 +192,29 @@ def _build_tree(
                                     depth=depth + 1,
                                     has_children=False,
                                     node_type="iteration",
-                                    iteration_label=iter_label,
+                                    iteration_label=f"Iter {iteration_num}",
                                     mode="do",
                                 )
                             )
+                        # Checker for this iteration
+                        cs_id = checker_by_iter.get(iteration_num)
+                        checker_session = session_by_id.get(cs_id) if cs_id else None
+                        if checker_session:
+                            result.append(
+                                TreeNode(
+                                    session=checker_session,
+                                    depth=depth + 1,
+                                    has_children=False,
+                                    node_type="iteration",
+                                    iteration_label="check",
+                                    mode="check",
+                                )
+                            )
 
-                    # Any child that is NOT a doer is a checker
+                    # Fallback: any child not accounted for as doer or checker
+                    all_known_ids = doer_ids | set(checker_by_iter.values())
                     for child in child_sessions:
-                        if child.id not in doer_ids:
+                        if child.id not in all_known_ids:
                             result.append(
                                 TreeNode(
                                     session=child,
