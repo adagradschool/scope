@@ -196,6 +196,25 @@ Options per phase:
 - `file_scope=["src/auth.py"]` — files relevant to this phase
 - `verify=["pytest tests/"]` — verification commands
 
+### Workflow file location
+
+Store reusable workflows in `~/.scope/workflows/` (global) so they are available across projects:
+
+```
+~/.scope/workflows/
+  tdd.py          # Red-green-refactor
+  review.py       # Code review pipeline
+  deploy.py       # Build, test, deploy
+```
+
+Run them from any project:
+
+```bash
+scope workflow ~/.scope/workflows/tdd.py
+```
+
+For project-specific workflows, keep them in the repo (e.g. `workflows/` at the project root).
+
 ## Exit: Intentional Course Correction
 
 Any agent inside a loop can call `scope exit` to cleanly halt the workflow with an explanation:
