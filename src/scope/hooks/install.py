@@ -56,10 +56,6 @@ HOOK_CONFIG = {
             "matcher": "*",
             "hooks": [{"type": "command", "command": "scope-hook task"}],
         },
-        {
-            "matcher": "*",
-            "hooks": [{"type": "command", "command": "scope-hook pattern-reinject"}],
-        },
     ],
     "Stop": [
         {

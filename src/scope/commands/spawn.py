@@ -189,12 +189,6 @@ def _send_contract(target: str, contract: str) -> None:
     default="",
     help="Model for agent checker (default: same as doer).",
 )
-@click.option(
-    "--pattern",
-    type=str,
-    default=None,
-    help="Suggest a pattern for the child agent (e.g., tdd, ralph)",
-)
 @click.pass_context
 def spawn(
     ctx: click.Context,
@@ -208,7 +202,6 @@ def spawn(
     checker: str,
     max_iterations: int,
     checker_model: str,
-    pattern: str | None,
 ) -> None:
     """Spawn a new scope session.
 
@@ -390,7 +383,6 @@ def spawn(
             prompt=prompt,
             depends_on=depends_on if depends_on else None,
             prior_results=prior_results,
-            pattern=pattern,
         )
         (session_dir / "contract.md").write_text(contract)
 

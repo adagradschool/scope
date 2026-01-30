@@ -60,19 +60,15 @@ def test_abort_help(runner):
     assert "Abort a scope session" in result.output
 
 
-def test_abort_session_not_found(runner, tmp_path, monkeypatch):
+def test_abort_session_not_found(runner, mock_scope_base):
     """Test aborting non-existent session shows error."""
-    monkeypatch.chdir(tmp_path)
-
     result = runner.invoke(main, ["abort", "999"])
     assert result.exit_code == 1
     assert "not found" in result.output
 
 
-def test_abort_deletes_session(runner, tmp_path, monkeypatch):
+def test_abort_deletes_session(runner, mock_scope_base, cleanup_scope_windows):
     """Test abort deletes the session."""
-    monkeypatch.chdir(tmp_path)
-
     # Create a session manually (without tmux)
     session = Session(
         id="0",
@@ -93,10 +89,8 @@ def test_abort_deletes_session(runner, tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(not tmux_available(), reason="tmux not installed")
-def test_abort_kills_tmux_session(runner, tmp_path, monkeypatch, cleanup_scope_sessions):
+def test_abort_kills_tmux_session(runner, mock_scope_base, cleanup_scope_sessions):
     """Test abort kills the tmux session."""
-    monkeypatch.chdir(tmp_path)
-
     # Create a real tmux session
     subprocess.run(
         tmux_cmd(["new-session", "-d", "-s", "scope-0", "cat"]),
@@ -125,10 +119,8 @@ def test_abort_kills_tmux_session(runner, tmp_path, monkeypatch, cleanup_scope_s
     assert load_session("0") is None
 
 
-def test_update_state_function(tmp_path, monkeypatch):
+def test_update_state_function(mock_scope_base):
     """Test update_state function."""
-    monkeypatch.chdir(tmp_path)
-
     # Create a session
     session = Session(
         id="0",
@@ -148,18 +140,14 @@ def test_update_state_function(tmp_path, monkeypatch):
     assert updated.state == "done"
 
 
-def test_update_state_not_found(tmp_path, monkeypatch):
+def test_update_state_not_found(mock_scope_base):
     """Test update_state raises FileNotFoundError for missing session."""
-    monkeypatch.chdir(tmp_path)
-
     with pytest.raises(FileNotFoundError):
         update_state("999", "aborted")
 
 
-def test_delete_session_function(tmp_path, monkeypatch):
+def test_delete_session_function(mock_scope_base):
     """Test delete_session function."""
-    monkeypatch.chdir(tmp_path)
-
     # Create a session
     session = Session(
         id="0",
@@ -178,18 +166,14 @@ def test_delete_session_function(tmp_path, monkeypatch):
     assert load_session("0") is None
 
 
-def test_delete_session_not_found(tmp_path, monkeypatch):
+def test_delete_session_not_found(mock_scope_base):
     """Test delete_session raises FileNotFoundError for missing session."""
-    monkeypatch.chdir(tmp_path)
-
     with pytest.raises(FileNotFoundError):
         delete_session("999")
 
 
-def test_get_descendants_empty(tmp_path, monkeypatch):
+def test_get_descendants_empty(mock_scope_base):
     """Test get_descendants returns empty list when no children."""
-    monkeypatch.chdir(tmp_path)
-
     # Create a session with no children
     session = Session(
         id="0",
@@ -205,10 +189,8 @@ def test_get_descendants_empty(tmp_path, monkeypatch):
     assert descendants == []
 
 
-def test_get_descendants_with_children(tmp_path, monkeypatch):
+def test_get_descendants_with_children(mock_scope_base):
     """Test get_descendants finds all children."""
-    monkeypatch.chdir(tmp_path)
-
     # Create parent and children
     for session_id, parent in [("0", ""), ("0.0", "0"), ("0.1", "0"), ("0.0.0", "0.0")]:
         session = Session(
@@ -234,10 +216,8 @@ def test_get_descendants_with_children(tmp_path, monkeypatch):
     assert descendant_ids.index("0.0.0") < descendant_ids.index("0.0")
 
 
-def test_abort_with_children_confirmation_declined(runner, tmp_path, monkeypatch):
+def test_abort_with_children_confirmation_declined(runner, mock_scope_base, cleanup_scope_windows):
     """Test abort with children shows confirmation and can be declined."""
-    monkeypatch.chdir(tmp_path)
-
     # Create parent and child
     for session_id, parent in [("0", ""), ("0.0", "0")]:
         session = Session(
@@ -261,10 +241,8 @@ def test_abort_with_children_confirmation_declined(runner, tmp_path, monkeypatch
     assert load_session("0.0") is not None
 
 
-def test_abort_with_children_confirmation_accepted(runner, tmp_path, monkeypatch):
+def test_abort_with_children_confirmation_accepted(runner, mock_scope_base, cleanup_scope_windows):
     """Test abort with children deletes all when confirmed."""
-    monkeypatch.chdir(tmp_path)
-
     # Create parent and children
     for session_id, parent in [("0", ""), ("0.0", "0"), ("0.1", "0")]:
         session = Session(
@@ -289,10 +267,8 @@ def test_abort_with_children_confirmation_accepted(runner, tmp_path, monkeypatch
     assert load_session("0.1") is None
 
 
-def test_abort_with_children_yes_flag(runner, tmp_path, monkeypatch):
+def test_abort_with_children_yes_flag(runner, mock_scope_base, cleanup_scope_windows):
     """Test abort -y skips confirmation."""
-    monkeypatch.chdir(tmp_path)
-
     # Create parent and child
     for session_id, parent in [("0", ""), ("0.0", "0")]:
         session = Session(
@@ -317,10 +293,8 @@ def test_abort_with_children_yes_flag(runner, tmp_path, monkeypatch):
     assert load_session("0.0") is None
 
 
-def test_abort_without_children_no_confirmation(runner, tmp_path, monkeypatch):
+def test_abort_without_children_no_confirmation(runner, mock_scope_base, cleanup_scope_windows):
     """Test abort without children doesn't show confirmation."""
-    monkeypatch.chdir(tmp_path)
-
     # Create session without children
     session = Session(
         id="0",

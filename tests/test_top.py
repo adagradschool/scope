@@ -1,5 +1,6 @@
 """Tests for scope TUI."""
 
+import os
 from datetime import datetime, timezone
 from unittest.mock import patch
 import pytest
@@ -9,7 +10,12 @@ from scope.core.state import load_all, save_session
 from scope.tui.app import ScopeApp
 from scope.tui.widgets.session_tree import SessionTable, _build_tree
 
+skip_in_scope = pytest.mark.skipif(
+    "SCOPE_SESSION_ID" in os.environ, reason="Textual TUI tests crash tmux in scope sessions"
+)
 
+
+@skip_in_scope
 @pytest.mark.asyncio
 async def test_app_launches(mock_scope_base):
     """Test that the app launches without error."""
@@ -19,6 +25,7 @@ async def test_app_launches(mock_scope_base):
         assert app.is_running
 
 
+@skip_in_scope
 @pytest.mark.asyncio
 async def test_app_shows_empty_message(mock_scope_base):
     """Test that empty state shows message."""
@@ -29,6 +36,7 @@ async def test_app_shows_empty_message(mock_scope_base):
         assert table.display is False
 
 
+@skip_in_scope
 @pytest.mark.asyncio
 async def test_app_displays_sessions(mock_scope_base):
     """Test that app displays sessions."""
@@ -50,6 +58,7 @@ async def test_app_displays_sessions(mock_scope_base):
         assert table.row_count == 1
 
 
+@skip_in_scope
 @pytest.mark.asyncio
 async def test_app_quit_binding(mock_scope_base):
     """Test that Ctrl+C quits the app."""
@@ -61,6 +70,7 @@ async def test_app_quit_binding(mock_scope_base):
         assert not app.is_running
 
 
+@skip_in_scope
 @pytest.mark.asyncio
 async def test_app_quit_keeps_running_sessions(mock_scope_base):
     """Test that quitting the app keeps running sessions."""
@@ -101,6 +111,7 @@ async def test_app_quit_keeps_running_sessions(mock_scope_base):
     assert session_ids == {"0", "1"}
 
 
+@skip_in_scope
 @pytest.mark.asyncio
 async def test_app_shows_running_count(mock_scope_base):
     """Test that subtitle shows running count."""
@@ -129,6 +140,7 @@ async def test_app_shows_running_count(mock_scope_base):
         assert "1 running" in app.sub_title
 
 
+@skip_in_scope
 @pytest.mark.asyncio
 async def test_session_table_shows_pending_task(mock_scope_base):
     """Test that empty task shows (pending...)."""
@@ -150,6 +162,7 @@ async def test_session_table_shows_pending_task(mock_scope_base):
         assert row_data[1] == "(pending...)"
 
 
+@skip_in_scope
 @pytest.mark.asyncio
 async def test_session_table_shows_activity(mock_scope_base):
     """Test that activity is displayed."""
@@ -174,6 +187,7 @@ async def test_session_table_shows_activity(mock_scope_base):
         assert row_data[3] == "editing main.py"
 
 
+@skip_in_scope
 @pytest.mark.asyncio
 async def test_session_table_truncates_long_task(mock_scope_base):
     """Test that long tasks are truncated."""
@@ -196,6 +210,7 @@ async def test_session_table_truncates_long_task(mock_scope_base):
         assert row_data[1].endswith("...")
 
 
+@skip_in_scope
 @pytest.mark.asyncio
 async def test_new_session_outside_tmux_shows_notification(mock_scope_base):
     """Test that pressing n outside tmux shows error notification."""
@@ -210,6 +225,7 @@ async def test_new_session_outside_tmux_shows_notification(mock_scope_base):
         assert len(sessions) == 0
 
 
+@skip_in_scope
 @pytest.mark.asyncio
 async def test_new_session_creates_session(mock_scope_base):
     """Test that pressing n creates a new session when in tmux."""
@@ -242,6 +258,7 @@ async def test_new_session_creates_session(mock_scope_base):
             mock_attach.assert_called_once_with("w0")
 
 
+@skip_in_scope
 @pytest.mark.asyncio
 async def test_new_session_appears_in_table(mock_scope_base):
     """Test that new session appears in table after creation."""
@@ -535,6 +552,7 @@ def test_build_tree_hide_done():
     assert result[0] == (root, 0, False)
 
 
+@skip_in_scope
 @pytest.mark.asyncio
 async def test_session_table_shows_nested_sessions(mock_scope_base):
     """Test that nested sessions are displayed with indentation."""
