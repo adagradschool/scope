@@ -84,7 +84,9 @@ def test_resume_by_alias(runner, mock_scope_base):
     assert "no claude session uuid" in result.output.lower()
 
 
-def test_resume_done_session(runner, mock_scope_base, monkeypatch, cleanup_scope_windows):
+def test_resume_done_session(
+    runner, mock_scope_base, monkeypatch, cleanup_scope_windows
+):
     """Test resuming a done session creates tmux window."""
     session = Session(
         id="0",
@@ -121,7 +123,9 @@ def test_resume_done_session(runner, mock_scope_base, monkeypatch, cleanup_scope
     assert "04cad4c6-1aee-4ac7-b38c-596edda8e3e5" in created_windows[0]["command"]
 
 
-def test_resume_keeps_state_done(runner, mock_scope_base, monkeypatch, cleanup_scope_windows):
+def test_resume_keeps_state_done(
+    runner, mock_scope_base, monkeypatch, cleanup_scope_windows
+):
     """Test resuming keeps state as done."""
     from scope.core.state import load_session
 
@@ -170,9 +174,7 @@ def test_resume_window_already_exists_recovers(runner, mock_scope_base, monkeypa
     monkeypatch.setattr(
         "scope.commands.resume.has_window_in_session", lambda s, w: True
     )
-    monkeypatch.setattr(
-        "scope.commands.resume.get_scope_session", lambda: "scope-test"
-    )
+    monkeypatch.setattr("scope.commands.resume.get_scope_session", lambda: "scope-test")
 
     result = runner.invoke(main, ["resume", "0"])
 

@@ -12,12 +12,14 @@ import os
 import click
 
 from scope.commands.abort import abort
+from scope.commands.exit import exit_cmd
 from scope.commands.poll import poll
 from scope.commands.resume import resume
 from scope.commands.setup import setup as setup_cmd
 from scope.commands.spawn import spawn
 from scope.commands.trajectory import trajectory
 from scope.commands.uninstall import uninstall
+from scope.commands.workflow_cmd import workflow_cmd
 from scope.commands.update import update
 from scope.commands.wait import wait
 from scope.core.tmux import (
@@ -133,3 +135,5 @@ main.add_command(trajectory)
 main.add_command(uninstall)
 main.add_command(update)
 main.add_command(wait)
+main.add_command(exit_cmd, name="exit")
+main.add_command(workflow_cmd, name="workflow")

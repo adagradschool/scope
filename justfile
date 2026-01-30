@@ -14,6 +14,7 @@ dev:
 # Install locally as tool (force reinstall)
 local:
     uv tool install . --force --reinstall
+    scope setup
 
 # Format code
 format:

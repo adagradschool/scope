@@ -148,7 +148,7 @@ def get_global_claude_md_path() -> Path:
 
 SCOPE_SKILL_CONTENT = """---
 name: scope
-description: Enable scope-managed orchestration with doer-checker loops and DAG dependencies.
+description: Enable scope-managed orchestration with doer-checker loops and workflows.
 ---
 
 # Scope: Orchestration CLI
@@ -169,24 +169,67 @@ Examples:
 - `--checker "pytest tests/"` — shell command checker
 - `--checker "agent: Verify the fix is correct and minimal. ACCEPT or RETRY."` — agent checker
 
-## DAGs: Dependency Ordering
+## Workflows: Multi-Phase Pipelines
 
-Use `--id` and `--after` to build task graphs:
+For multi-step tasks, use `scope workflow` to run a Python file that sequences phases:
+
+```bash
+scope workflow workflows/tdd.py
+```
+
+```python
+# workflows/tdd.py
+from scope import Workflow
+
+wf = Workflow("tdd")
+wf.phase("red", task="Write failing tests for src/auth", checker="pytest tests/")
+wf.phase("green", task="Make tests pass", checker="pytest tests/", max_iterations=5)
+wf.phase("refactor", task="Refactor for clarity", checker="agent: Review. ACCEPT/RETRY")
+results = wf.run()
+```
+
+Phases run sequentially. Each phase automatically receives the previous phase's result as context. Use `pipe_from=["phase_name"]` to override which phase(s) pipe into the current one.
+
+Options per phase:
+- `on_fail="stop"` (default) — halt the workflow on failure
+- `on_fail="continue"` — skip to the next phase despite failure
+- `file_scope=["src/auth.py"]` — files relevant to this phase
+- `verify=["pytest tests/"]` — verification commands
+
+## Exit: Intentional Course Correction
+
+Any agent inside a loop can call `scope exit` to cleanly halt the workflow with an explanation:
+
+```bash
+scope exit "Auth module uses event-driven pattern, need to redesign"
+```
+
+This is NOT an error — it's intentional course correction. The reason propagates back through the loop and workflow:
+
+```
+Agent calls scope exit "reason"
+  → session state = exited, exit_reason saved
+    → loop engine returns LoopResult(verdict="exit", exit_reason=...)
+      → workflow stops, results show exactly where and why
+```
+
+Use `scope exit` when you determine the current approach won't work and want to signal this cleanly to the orchestrator rather than producing a bad result.
+
+## Aliases
+
+Use `--id` to give sessions memorable names for `scope wait` and `scope poll`:
 
 ```bash
 scope spawn --id build "Build the project" --checker "make check"
-scope spawn --id test --after build "Run tests" --checker "pytest"
-scope spawn --id lint --after build "Run linter" --checker "ruff check ."
-scope wait test lint
+scope spawn --id test "Run tests" --checker "pytest"
+scope wait build test
 ```
-
-`test` and `lint` both wait for `build`, then run in parallel.
 
 ## Context Limit (100k tokens)
 
 When blocked by context gate:
 - **HANDOFF**: `scope spawn "Continue: [progress] + [remaining work]" --checker "agent: Verify work completed. ACCEPT/RETRY."`
-- **SPLIT**: spawn subtasks with `--checker`, then `scope wait`
+- **SPLIT**: spawn subtasks with `--checker`, then `scope wait` with id
 
 ## Recursion Guard
 
@@ -206,8 +249,10 @@ Batch work into 2-3 chunks rather than spawning per-item.
 ```
 scope spawn "task" --checker "cmd"     # Start subagent (--checker REQUIRED)
 scope spawn "task" --checker "agent: Review for correctness. ACCEPT/RETRY."
-scope spawn --id=X --after=Y --checker "cmd"  # With dependency ordering
+scope spawn --id=X --checker "cmd"             # With alias
 scope spawn --plan --checker "cmd"     # Start in plan mode
+scope workflow file.py                 # Run multi-phase workflow
+scope exit "reason"                    # Halt workflow with explanation
 scope poll [id]                        # Check status (non-blocking)
 scope wait [id]                        # Block until done
 scope abort <id>                       # Kill a session
@@ -452,10 +497,6 @@ def ensure_setup(quiet: bool = True, force: bool = False) -> None:
     from scope.core.tmux import is_installed as tmux_is_installed
     from scope.core.tmux import is_server_running
 
-    # Skip if tmux not installed (can't do full setup)
-    if not tmux_is_installed():
-        return
-
     # Read all versions once at start
     installed_versions = read_all_versions()
     updated = []
@@ -482,25 +523,27 @@ def ensure_setup(quiet: bool = True, force: bool = False) -> None:
             if not quiet:
                 print(f"Warning: Failed to install skill: {e}", file=sys.stderr)
 
-    # Check and update tmux hooks
-    tmux_ver = _tmux_hooks_version()
-    if force or installed_versions.get("tmux_hooks") != tmux_ver:
-        if is_server_running():
-            try:
-                success, error = install_tmux_hooks()
-                if success:
-                    installed_versions["tmux_hooks"] = tmux_ver
-                    updated.append("tmux_hooks")
-                elif not quiet:
-                    print(
-                        f"Warning: Failed to install tmux hooks: {error}",
-                        file=sys.stderr,
-                    )
-            except Exception as e:
-                if not quiet:
-                    print(
-                        f"Warning: Failed to install tmux hooks: {e}", file=sys.stderr
-                    )
+    # Check and update tmux hooks (requires tmux)
+    if tmux_is_installed():
+        tmux_ver = _tmux_hooks_version()
+        if force or installed_versions.get("tmux_hooks") != tmux_ver:
+            if is_server_running():
+                try:
+                    success, error = install_tmux_hooks()
+                    if success:
+                        installed_versions["tmux_hooks"] = tmux_ver
+                        updated.append("tmux_hooks")
+                    elif not quiet:
+                        print(
+                            f"Warning: Failed to install tmux hooks: {error}",
+                            file=sys.stderr,
+                        )
+                except Exception as e:
+                    if not quiet:
+                        print(
+                            f"Warning: Failed to install tmux hooks: {e}",
+                            file=sys.stderr,
+                        )
 
     # Check and update ccstatusline (only if not already configured OR force)
     ccstatusline_ver = _ccstatusline_version()

@@ -1,6 +1,5 @@
 """Shared pytest fixtures for scope tests."""
 
-import os
 import subprocess
 
 import pytest

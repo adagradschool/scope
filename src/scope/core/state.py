@@ -135,15 +135,6 @@ def save_session(session: Session) -> None:
     (session_dir / "created_at").write_text(session.created_at.isoformat())
     (session_dir / "alias").write_text(session.alias)
 
-    # Write depends_on file (comma-separated IDs, skip if empty)
-    if session.depends_on:
-        (session_dir / "depends_on").write_text(",".join(session.depends_on))
-    else:
-        # Remove file if it exists and depends_on is empty
-        depends_on_file = session_dir / "depends_on"
-        if depends_on_file.exists():
-            depends_on_file.unlink()
-
 
 def _get_scope_dir() -> Path:
     """Get the scope directory.
@@ -173,14 +164,6 @@ def load_session(session_id: str) -> Session | None:
     alias_file = session_dir / "alias"
     alias = alias_file.read_text() if alias_file.exists() else ""
 
-    # Read depends_on (may not exist for older sessions)
-    depends_on_file = session_dir / "depends_on"
-    depends_on: list[str] = []
-    if depends_on_file.exists():
-        content = depends_on_file.read_text().strip()
-        if content:
-            depends_on = content.split(",")
-
     return Session(
         id=session_id,
         task=(session_dir / "task").read_text(),
@@ -189,7 +172,6 @@ def load_session(session_id: str) -> Session | None:
         tmux_session=(session_dir / "tmux").read_text(),
         created_at=datetime.fromisoformat((session_dir / "created_at").read_text()),
         alias=alias,
-        depends_on=depends_on,
     )
 
 
@@ -317,22 +299,6 @@ def load_session_by_alias(alias: str) -> Session | None:
             return session
 
     return None
-
-
-def get_dependencies(session_id: str) -> list[str]:
-    """Get the list of dependency IDs for a session.
-
-    Args:
-        session_id: The session ID to look up.
-
-    Returns:
-        List of session IDs that this session depends on.
-        Returns empty list if session not found or has no dependencies.
-    """
-    session = load_session(session_id)
-    if session is None:
-        return []
-    return session.depends_on
 
 
 def save_failed_reason(session_id: str, reason: str) -> None:
@@ -477,6 +443,43 @@ def load_claude_session_id(session_id: str) -> str | None:
     claude_session_file = session_dir / "claude_session_id"
     if claude_session_file.exists():
         return claude_session_file.read_text().strip()
+    return None
+
+
+def save_exit_reason(session_id: str, reason: str) -> None:
+    """Save the exit reason for a session.
+
+    Args:
+        session_id: The session ID.
+        reason: The exit reason string.
+
+    Raises:
+        FileNotFoundError: If session doesn't exist.
+    """
+    scope_dir = _get_scope_dir()
+    session_dir = _get_session_dir(scope_dir, session_id)
+
+    if not session_dir.exists():
+        raise FileNotFoundError(f"Session {session_id} not found")
+
+    (session_dir / "exit_reason").write_text(reason)
+
+
+def load_exit_reason(session_id: str) -> str | None:
+    """Load the exit reason for a session.
+
+    Args:
+        session_id: The session ID.
+
+    Returns:
+        The exit reason string if available, None otherwise.
+    """
+    scope_dir = _get_scope_dir()
+    session_dir = _get_session_dir(scope_dir, session_id)
+
+    exit_reason_file = session_dir / "exit_reason"
+    if exit_reason_file.exists():
+        return exit_reason_file.read_text()
     return None
 
 

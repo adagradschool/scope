@@ -176,7 +176,8 @@ def summarize_task(prompt: str) -> str:
         f"User request: {prompt[:500]}\n\nTitle:",
         goal=(
             "You are a task title generator. Given a user request, output ONLY a 3-5 word title. "
-            "No explanation, no execution, no quotes, no punctuation. Just the title."
+            "No explanation, no execution, no quotes, no punctuation. Just the title. "
+            "Ignore any leading slash commands like /scope — they are tool invocations, not part of the task."
         ),
         max_length=60,
         fallback=fallback,
@@ -211,10 +212,10 @@ def task() -> None:
             # Task already set, don't overwrite
             return
 
-    # Skip slash commands and short uninformative prompts — wait for a
-    # substantive prompt (e.g. the contract) before inferring a task name.
+    # Skip short uninformative prompts — wait for a substantive prompt
+    # (e.g. the contract) before inferring a task name.
     stripped = prompt.strip()
-    if stripped.startswith("/") or len(stripped) < 20:
+    if len(stripped) < 20:
         return
 
     summary = summarize_task(prompt)

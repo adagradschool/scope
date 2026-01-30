@@ -321,6 +321,13 @@ class ScopeApp(App):
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Handle row selection (enter key) to attach to session in split pane."""
+        raw_key = str(event.row_key.value)
+
+        # Loop header rows toggle collapse instead of attaching
+        if raw_key.startswith("loop:"):
+            table = self.query_one(SessionTable)
+            table.toggle_collapse()
+            return
 
         # Check if we're running inside tmux
         if not in_tmux():
@@ -334,7 +341,7 @@ class ScopeApp(App):
             self.action_detach()
 
         # Get the session ID from the row key
-        session_id = str(event.row_key.value)
+        session_id = raw_key
         window_name = tmux_window_name(session_id)
 
         # Load session to check state

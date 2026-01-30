@@ -1,7 +1,6 @@
 """Tests for trajectory functions in hooks.handler and core.state."""
 
 from datetime import datetime, timezone
-from pathlib import Path
 
 import orjson
 import pytest
@@ -152,7 +151,9 @@ also invalid
 def setup_session_with_trajectory(mock_scope_base):
     """Create a session directory and populate with trajectory files."""
 
-    def _create(session_id: str, trajectory_entries: list[dict], index: dict | None = None):
+    def _create(
+        session_id: str, trajectory_entries: list[dict], index: dict | None = None
+    ):
         session = Session(
             id=session_id,
             task="Test task",
@@ -428,7 +429,9 @@ def test_load_trajectory_skips_malformed_lines(mock_scope_base):
 also invalid
 {"type": "assistant", "message": {"content": [{"type": "text", "text": "ok"}]}}
 """
-    (mock_scope_base / "sessions" / "0" / "trajectory.jsonl").write_text(trajectory_content)
+    (mock_scope_base / "sessions" / "0" / "trajectory.jsonl").write_text(
+        trajectory_content
+    )
 
     result = load_trajectory("0")
 
@@ -496,7 +499,9 @@ def test_load_trajectory_index_malformed_json(mock_scope_base):
         created_at=datetime.now(timezone.utc),
     )
     save_session(session)
-    (mock_scope_base / "sessions" / "0" / "trajectory_index.json").write_text("{invalid")
+    (mock_scope_base / "sessions" / "0" / "trajectory_index.json").write_text(
+        "{invalid"
+    )
 
     result = load_trajectory_index("0")
 
