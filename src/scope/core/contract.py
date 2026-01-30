@@ -3,6 +3,7 @@
 Generates markdown contracts that are sent to Claude Code as the initial prompt.
 """
 
+
 def generate_contract(
     prompt: str,
     depends_on: list[str] | None = None,
