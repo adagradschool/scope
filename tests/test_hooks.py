@@ -224,13 +224,13 @@ def test_task_hook_uses_summarizer(runner, setup_session, monkeypatch):
     assert "long prompt" in called_with[0]
 
 
-def test_task_hook_skips_slash_commands(runner, setup_session):
-    """Test task hook ignores slash command prompts like /scope."""
+def test_task_hook_skips_short_slash_commands(runner, setup_session):
+    """Test task hook ignores short slash command prompts (< 20 chars)."""
     session_dir = setup_session
     task_file = session_dir / "task"
     task_file.write_text("(pending...)")
 
-    for cmd in ["/scope", "/scope some args here", "/help", "/commit"]:
+    for cmd in ["/scope", "/help", "/commit"]:
         task_file.write_text("(pending...)")
         input_json = orjson.dumps({"prompt": cmd}).decode()
         result = runner.invoke(main, ["task"], input=input_json)
