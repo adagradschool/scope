@@ -196,6 +196,25 @@ Options per phase:
 - `file_scope=["src/auth.py"]` — files relevant to this phase
 - `verify=["pytest tests/"]` — verification commands
 
+### Workflow file location
+
+Store reusable workflows in `~/.scope/workflows/` (global) so they are available across projects:
+
+```
+~/.scope/workflows/
+  tdd.py          # Red-green-refactor
+  review.py       # Code review pipeline
+  deploy.py       # Build, test, deploy
+```
+
+Run them from any project:
+
+```bash
+scope workflow ~/.scope/workflows/tdd.py
+```
+
+For project-specific workflows, keep them in the repo (e.g. `workflows/` at the project root).
+
 ## Exit: Intentional Course Correction
 
 Any agent inside a loop can call `scope exit` to cleanly halt the workflow with an explanation:
@@ -522,6 +541,15 @@ def ensure_setup(quiet: bool = True, force: bool = False) -> None:
         except Exception as e:
             if not quiet:
                 print(f"Warning: Failed to install skill: {e}", file=sys.stderr)
+
+    # Initialize evolution baseline (snapshot v0 of skill)
+    try:
+        from scope.core.evolve import init_baseline
+
+        init_baseline()
+    except Exception as e:
+        if not quiet:
+            print(f"Warning: Failed to init evolution baseline: {e}", file=sys.stderr)
 
     # Check and update tmux hooks (requires tmux)
     if tmux_is_installed():

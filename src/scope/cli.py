@@ -19,6 +19,7 @@ from scope.commands.setup import setup as setup_cmd
 from scope.commands.spawn import spawn
 from scope.commands.trajectory import trajectory
 from scope.commands.uninstall import uninstall
+from scope.commands.evolve import evolve
 from scope.commands.workflow_cmd import workflow_cmd
 from scope.commands.update import update
 from scope.commands.wait import wait
@@ -136,4 +137,5 @@ main.add_command(uninstall)
 main.add_command(update)
 main.add_command(wait)
 main.add_command(exit_cmd, name="exit")
+main.add_command(evolve)
 main.add_command(workflow_cmd, name="workflow")

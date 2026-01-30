@@ -353,3 +353,9 @@ def spawn(
             checker_model=checker_model or model,
             dangerously_skip_permissions=dangerously_skip_permissions,
         )
+
+        # Spawn evolution subagent (opt-in via env var)
+        if os.environ.get("SCOPE_EVOLUTION_ENABLED"):
+            from scope.core.evolve import spawn_evolution
+
+            spawn_evolution(session_id)
