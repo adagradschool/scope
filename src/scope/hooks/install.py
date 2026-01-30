@@ -150,269 +150,37 @@ def get_global_claude_md_path() -> Path:
     return Path.home() / ".claude" / "CLAUDE.md"
 
 
-RALPH_SKILL_CONTENT = """---
-name: ralph
-description: Iterative refinement loops. Use when improving outputs through critique cycles, quality improvement, polish/editing tasks, or convergent optimization toward a goal.
+SCOPE_SKILL_CONTENT = """---
+name: scope
+description: Enable scope-managed orchestration with doer-checker loops and DAG dependencies.
 ---
 
-# RALPH: Iterative Refinement Loop
+# Scope: Orchestration CLI
 
-You are an **orchestrator only**. Do not do any work directly—only spawn subagents and evaluate their outputs.
-
-Critique → Evaluate → Act → Repeat until done.
-
-## 1. Lock Variables (ask one at a time)
-- **Goal**: What does done look like?
-- **Max iterations**: Default 5
-- **Delta threshold**: When is improvement too small to continue?
-
-Do not proceed until confirmed.
-
-## 2. Loop
-
-Each spawn must include both the **global task** (overall goal) and the **tactical task** (specific action):
-
-```
-while iterations < max:
-    scope spawn "Global: {goal}. Tactical: Critique the current state—what's wrong, what's missing, how far from done?"
-    scope wait
-    # Read critique from session output
-
-    if goal_met(critique) or delta < threshold:
-        break
-
-    scope spawn "Global: {goal}. Tactical: Improve based on this critique: {critique}"
-    scope wait
-```
-
-## 3. Exit
-Report: why stopped, what changed, current state.
-
-## Rules
-- You are an orchestrator: spawn and evaluate only, never do the work yourself
-- Each spawn gets both global context (the goal) and tactical context (the specific step)
-- Never improve without evaluating the critique first
-- Stop early if delta is negligible
-"""
-
-TDD_SKILL_CONTENT = """---
-name: tdd
-description: Test-driven development. Use for new feature implementation, bug fixes requiring regression tests, or any code change needing test coverage.
----
-
-# TDD: Test-Driven Development
-
-Red → Green → Refactor. Tests first, always.
-
-## Cycle
-1. **Red**: Write a failing test for the next piece of functionality
-2. **Green**: Write minimal code to make it pass
-3. **Refactor**: Clean up while keeping tests green
-
-## Workflow
-```
-scope spawn "Write failing test for: {feature}"
-scope wait
-
-scope spawn "Implement minimal code to pass the test"
-scope wait
-
-scope spawn "Refactor: clean up implementation, ensure tests pass"
-scope wait
-```
-
-## Rules
-- Never write implementation before the test exists
-- Each test should fail for the right reason before you fix it
-- Keep cycles small: one behavior per test
-- Run tests after every change
-- Refactor only when green
-"""
-
-RLM_SKILL_CONTENT = """---
-name: rlm
-description: Large context exploration. Use when exploring large codebases (>100K tokens), unknown codebase structure, finding needles in haystacks, or iterative examination of unfamiliar content.
----
-
-# RLM: Recursive Language Model Exploration
-
-Peek → Grep → Dive. Explore large contexts without flooding your window.
-
-## Pattern
-1. **Peek**: Inspect structure first (head, tail, outline)
-2. **Grep**: Narrow search with patterns before diving deep
-3. **Dive**: Spawn subagents for focused analysis of specific sections
-
-## Workflow
-```
-# 1. Peek at structure
-Read first 100 lines, check file structure, identify sections
-
-# 2. Grep to locate
-Search for relevant patterns before spawning
-
-# 3. Dive on specific targets
-scope spawn "Analyze {specific_section} in {file}"
-scope wait
-```
-
-## Rules
-- ALWAYS peek before spawning - understand structure first
-- Use grep to narrow, don't spawn "analyze everything"
-- Max dive depth: 3 levels
-- Each dive must be smaller scope than parent
-- If >50% of dives return empty, try different patterns
-"""
-
-MAP_REDUCE_SKILL_CONTENT = """---
-name: map-reduce
-description: Parallel independent tasks with aggregation. Use for file-by-file analysis, aggregatable results across chunks, or when N workers can process simultaneously.
----
-
-# Map-Reduce: Parallel Workers + Aggregation
-
-Fork N workers → Wait all → Reduce results.
-
-## Phases
-1. **Map**: Spawn N independent workers in parallel
-2. **Wait**: Block until all complete
-3. **Reduce**: Synthesize results into final output
-
-## Workflow
-```
-# Map phase - spawn 2-3 workers MAX (batch items into chunks)
-scope spawn "Process batch 1: files A, B, C"
-scope spawn "Process batch 2: files D, E, F"
-
-# Wait phase - block for all
-scope wait
-
-# Reduce phase - synthesize (you do this, or spawn reducer)
-Combine results from all workers into final output
-```
-
-## Rules
-- Batch items into 2-3 chunks, don't spawn per-item
-- Workers MUST be independent (no shared state)
-- Each worker gets a specific, bounded chunk
-- Wait for ALL workers before reducing
-- Reducer sees only outputs, not worker context
-- If a worker fails, decide: retry, skip, or abort
-"""
-
-MAKER_CHECKER_SKILL_CONTENT = """---
-name: maker-checker
-description: High-stakes work needing independent validation. Use for security-sensitive code, critical outputs needing review, or separation of creation and verification.
----
-
-# Maker-Checker: Separation of Concerns
-
-One makes, another validates. Never self-review.
-
-## Roles
-- **Maker**: Creates the artifact (code, plan, analysis)
-- **Checker**: Reviews, critiques, validates independently
-
-## Workflow
-```
-# Maker creates
-scope spawn "Create: {artifact_description}"
-scope wait
-
-# Checker validates (fresh context, no maker bias)
-scope spawn "Review: validate {artifact}, check for {criteria}"
-scope wait
-
-# If checker finds issues, iterate
-scope spawn "Fix: address these issues: {checker_feedback}"
-scope wait
-```
-
-## Rules
-- Maker and checker MUST be separate agents (fresh context)
-- Checker never sees maker's reasoning, only output
-- Define validation criteria upfront
-- Iterate until checker approves or max iterations hit
-- For critical work: use different models (maker=fast, checker=thorough)
-"""
-
-DAG_SKILL_CONTENT = """---
-name: dag
-description: Multi-step workflows with task dependencies. Use for build pipelines requiring ordered execution, or complex orchestration with partial parallelism.
----
-
-# DAG: Dependency Graph Execution
-
-Tasks with dependencies. Use --id and --after for ordering.
-
-## Syntax
-```
-scope spawn --id=A "Task A (no deps)"
-scope spawn --id=B "Task B (no deps)"
-scope spawn --id=C --after=A,B "Task C (needs A and B)"
-scope spawn --id=D --after=C "Task D (needs C)"
-```
-
-## Workflow
-```
-# 1. Identify tasks and dependencies
-# 2. Assign IDs to each task
-# 3. Spawn with --after for dependencies
-# 4. scope wait blocks until all complete
-
-scope spawn --id=parse "Parse input files"
-scope spawn --id=validate "Validate schema"
-scope spawn --id=transform --after=parse,validate "Transform data"
-scope spawn --id=output --after=transform "Generate output"
-scope wait
-```
-
-## Rules
-- Tasks without --after start immediately
-- --after=X,Y waits for BOTH X and Y
-- Cycles are forbidden (A->B->A)
-- Failed dependency = dependent task skipped
-- Use descriptive IDs (not just a,b,c)
-"""
-
-SCOPE_COMMAND_CONTENT = """<prompt>
-  <instructions>
 You are scope-managed. Task tool is disabled; use `scope spawn` for subagents.
 
-## MANDATORY: Pattern Selection (Passive Skill Index)
+## Core Primitive: The Loop
 
-Before doing ANY work, you MUST select **at most one** pattern below and follow it.
+Every `scope spawn` runs a **doer-checker loop**:
 
-**Key idea (from recent evals):** *"agent can access X" ≠ "agent will access X"*. So we make the playbook **always present** instead of relying on a separate retrieval/tool invocation.
+1. The doer executes the task.
+2. A checker (spawned with `--checker`) reviews the work.
+3. If the checker finds issues, the doer retries (up to `--max-iterations`).
 
-| Pattern | Trigger (examples) | What to do (canonical) |
-|---|---|---|
-| **RALPH (critique → improve loop)** | improve/refine/polish/iterate | Spawn alternating critique + improve subtasks until done. |
-| **TDD (red → green → refactor)** | add tests / fix bug with regression / implement feature | Spawn: write failing test → implement minimal → refactor (keep tests green). |
-| **RLM (peek → grep → dive)** | explore/find/understand codebase; large file | Peek structure first, grep to narrow, then spawn focused dives. |
-| **MAP‑REDUCE** | process many items/files; aggregatable | Spawn 2–3 chunked workers → wait all → reduce/summarize. |
-| **MAKER‑CHECKER** | security/critical/review/high‑stakes | One agent makes; a different agent validates; iterate on issues. |
-| **DAG** | pipeline; dependencies; A then B then C | Encode deps with `--id` and `--after`; wait on leaves. |
+Use `--checker "prompt"` to attach verification to any spawn. The checker receives the doer's output and must exit 0 (pass) or non-zero (fail).
 
-## Enforcement Protocol
+## DAGs: Dependency Ordering
 
-1. **STOP** — don't start executing immediately.
-2. **CLASSIFY** — does one pattern above clearly match?
-3. **COMMIT or PROCEED**:
-   - If a pattern matches: run `scope commit <pattern>` to register it, then **follow it explicitly** using `scope spawn` / `scope wait`. Use `scope advance` after completing each phase.
-   - If no pattern matches: proceed directly, but keep the scope small.
+Use `--id` and `--after` to build task graphs:
 
-Pattern commitment persists across prompts — Scope will remind you of your pattern and current phase after every prompt submission. If you need to deviate, state why explicitly.
+```bash
+scope spawn --id build "Build the project" --checker "make check"
+scope spawn --id test --after build "Run tests" --checker "pytest"
+scope spawn --id lint --after build "Run linter" --checker "ruff check ."
+scope wait test lint
+```
 
-## Examples
-
-- "Improve this code quality" → RALPH
-- "Add a new endpoint with tests" → TDD
-- "Find where errors are handled" → RLM
-- "Process all .py files" → MAP‑REDUCE
-- "Review this security‑critical change" → MAKER‑CHECKER
-- "Build, then test, then deploy" → DAG
-- "Rename this variable" → no pattern; do it directly
+`test` and `lint` both wait for `build`, then run in parallel.
 
 ## Context Limit (100k tokens)
 
@@ -420,21 +188,10 @@ When blocked by context gate:
 - **HANDOFF**: `scope spawn "Continue: [progress] + [remaining work]"`
 - **SPLIT**: `scope spawn "subtask 1"` + `scope spawn "subtask 2"` + `scope wait`
 
-## Commands
-
-| Command | Effect |
-|---------|--------|
-| `scope spawn "task"` | Start subagent |
-| `scope spawn --id=X --after=Y "task"` | Start with dependency |
-| `scope commit <pattern>` | Commit to a pattern (tdd, ralph, etc.) |
-| `scope advance` | Advance to next pattern phase |
-| `scope poll` | Check status (non-blocking) |
-| `scope wait` | Block until complete |
-
 ## Recursion Guard
 
 - Subtasks MUST be strictly smaller than parent
-- NEVER spawn a task similar to what you received—do it yourself
+- NEVER spawn a task similar to what you received -- do it yourself
 - Include specific context: files, functions, progress
 
 ## Limits
@@ -447,31 +204,18 @@ Batch work into 2-3 chunks rather than spawning per-item.
 ## CLI Quick Reference
 
 ```
-scope                  # Launch TUI (shows all sessions)
-scope spawn "task"     # Start subagent with task
-scope spawn --plan     # Start in plan mode
-scope spawn --model=X  # Use specific model (opus/sonnet/haiku)
-scope commit <pattern> # Commit to pattern (tdd/ralph/map-reduce/...)
-scope advance          # Advance to next pattern phase
-scope poll [id]        # Check status (non-blocking)
-scope wait [id]        # Block until done
-scope abort <id>       # Kill a session
-scope trajectory <id>  # Export conversation JSON
-scope setup            # Reinstall hooks/skills
-scope uninstall        # Remove scope integration
+scope spawn "task" --checker "verify"  # Start subagent with checker
+scope spawn --id=X --after=Y          # Dependency ordering
+scope spawn --plan                     # Start in plan mode
+scope spawn --model=X                  # Use specific model
+scope poll [id]                        # Check status (non-blocking)
+scope wait [id]                        # Block until done
+scope abort <id>                       # Kill a session
+scope trajectory <id>                  # View what a session did
+scope setup                            # Reinstall hooks
+scope uninstall                        # Remove scope integration
 ```
-
-DAG options: `--id=NAME --after=A,B` for dependency ordering.
-  </instructions>
-</prompt>
-
-$ARGUMENTS
 """
-
-
-def get_claude_commands_dir() -> Path:
-    """Get the path to Claude Code's custom commands directory."""
-    return Path.home() / ".claude" / "commands"
 
 
 def get_claude_skills_dir() -> Path:
@@ -479,38 +223,12 @@ def get_claude_skills_dir() -> Path:
     return Path.home() / ".claude" / "skills"
 
 
-def install_custom_commands() -> None:
-    """Install custom Claude Code commands for scope."""
-    commands_dir = get_claude_commands_dir()
-    commands_dir.mkdir(parents=True, exist_ok=True)
-
-    # Install /scope command (only scope stays as custom command)
-    scope_path = commands_dir / "scope.md"
-    scope_path.write_text(SCOPE_COMMAND_CONTENT)
-
-
-def install_skills() -> None:
-    """Install Claude Code skills for scope orchestration patterns.
-
-    Skills are installed to ~/.claude/skills/<skill-name>/SKILL.md
-    Each SKILL.md has YAML frontmatter with name and description.
-    """
-    skills_dir = get_claude_skills_dir()
-
-    skills = {
-        "ralph": RALPH_SKILL_CONTENT,
-        "tdd": TDD_SKILL_CONTENT,
-        "rlm": RLM_SKILL_CONTENT,
-        "map-reduce": MAP_REDUCE_SKILL_CONTENT,
-        "maker-checker": MAKER_CHECKER_SKILL_CONTENT,
-        "dag": DAG_SKILL_CONTENT,
-    }
-
-    for skill_name, content in skills.items():
-        skill_dir = skills_dir / skill_name
-        skill_dir.mkdir(parents=True, exist_ok=True)
-        skill_path = skill_dir / "SKILL.md"
-        skill_path.write_text(content)
+def install_scope_skill() -> None:
+    """Install the scope skill to ~/.claude/skills/scope/SKILL.md."""
+    skill_dir = get_claude_skills_dir() / "scope"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    skill_path = skill_dir / "SKILL.md"
+    skill_path.write_text(SCOPE_SKILL_CONTENT)
 
 
 def install_tmux_hooks() -> tuple[bool, str | None]:
@@ -704,21 +422,9 @@ def _hooks_version() -> str:
     return content_hash(orjson.dumps(HOOK_CONFIG).decode())
 
 
-def _skills_version() -> str:
-    """Get version hash for skills based on skill content."""
-    return content_hash(
-        RALPH_SKILL_CONTENT,
-        TDD_SKILL_CONTENT,
-        RLM_SKILL_CONTENT,
-        MAP_REDUCE_SKILL_CONTENT,
-        MAKER_CHECKER_SKILL_CONTENT,
-        DAG_SKILL_CONTENT,
-    )
-
-
-def _commands_version() -> str:
-    """Get version hash for custom commands."""
-    return content_hash(SCOPE_COMMAND_CONTENT)
+def _skill_version() -> str:
+    """Get version hash for the scope skill."""
+    return content_hash(SCOPE_SKILL_CONTENT)
 
 
 def _ccstatusline_version() -> str:
@@ -765,27 +471,16 @@ def ensure_setup(quiet: bool = True, force: bool = False) -> None:
             if not quiet:
                 print(f"Warning: Failed to install hooks: {e}", file=sys.stderr)
 
-    # Check and update skills
-    skills_ver = _skills_version()
-    if force or installed_versions.get("skills") != skills_ver:
+    # Check and update scope skill
+    skill_ver = _skill_version()
+    if force or installed_versions.get("skill") != skill_ver:
         try:
-            install_skills()
-            installed_versions["skills"] = skills_ver
-            updated.append("skills")
+            install_scope_skill()
+            installed_versions["skill"] = skill_ver
+            updated.append("skill")
         except Exception as e:
             if not quiet:
-                print(f"Warning: Failed to install skills: {e}", file=sys.stderr)
-
-    # Check and update custom commands
-    commands_ver = _commands_version()
-    if force or installed_versions.get("commands") != commands_ver:
-        try:
-            install_custom_commands()
-            installed_versions["commands"] = commands_ver
-            updated.append("commands")
-        except Exception as e:
-            if not quiet:
-                print(f"Warning: Failed to install commands: {e}", file=sys.stderr)
+                print(f"Warning: Failed to install skill: {e}", file=sys.stderr)
 
     # Check and update tmux hooks
     tmux_ver = _tmux_hooks_version()

@@ -5,11 +5,9 @@ import pytest
 from click.testing import CliRunner
 
 from scope.commands.uninstall import (
-    SCOPE_SKILLS,
     remove_scope_data,
     uninstall,
     uninstall_ccstatusline,
-    uninstall_skills,
 )
 
 
@@ -28,14 +26,8 @@ def mock_claude_dir(tmp_path, monkeypatch):
     def mock_settings_path():
         return claude_dir / "settings.json"
 
-    def mock_skills_dir():
-        return claude_dir / "skills"
-
     monkeypatch.setattr(
         "scope.commands.uninstall.get_claude_settings_path", mock_settings_path
-    )
-    monkeypatch.setattr(
-        "scope.commands.uninstall.get_claude_skills_dir", mock_skills_dir
     )
 
     return claude_dir
@@ -54,61 +46,6 @@ def mock_scope_dir(tmp_path, monkeypatch):
     )
 
     return scope_dir
-
-
-# --- uninstall_skills tests ---
-
-
-def test_uninstall_skills_removes_only_scope_skills(mock_claude_dir):
-    """Test uninstall_skills removes only scope-installed skills."""
-    skills_dir = mock_claude_dir / "skills"
-    skills_dir.mkdir()
-
-    # Create scope skills
-    for skill_name in SCOPE_SKILLS:
-        skill_dir = skills_dir / skill_name
-        skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text(f"# {skill_name}")
-
-    # Create a user skill that should NOT be removed
-    user_skill_dir = skills_dir / "my-custom-skill"
-    user_skill_dir.mkdir()
-    (user_skill_dir / "SKILL.md").write_text("# Custom skill")
-
-    removed = uninstall_skills()
-
-    # All scope skills should be removed
-    assert removed == len(SCOPE_SKILLS)
-    for skill_name in SCOPE_SKILLS:
-        assert not (skills_dir / skill_name).exists()
-
-    # User skill should remain
-    assert user_skill_dir.exists()
-    assert (user_skill_dir / "SKILL.md").read_text() == "# Custom skill"
-
-
-def test_uninstall_skills_handles_missing_skills(mock_claude_dir):
-    """Test uninstall_skills handles missing skills gracefully."""
-    skills_dir = mock_claude_dir / "skills"
-    skills_dir.mkdir()
-
-    # Create only some scope skills
-    (skills_dir / "ralph").mkdir()
-    (skills_dir / "ralph" / "SKILL.md").write_text("# ralph")
-
-    removed = uninstall_skills()
-
-    assert removed == 1
-    assert not (skills_dir / "ralph").exists()
-
-
-def test_uninstall_skills_handles_empty_skills_dir(mock_claude_dir):
-    """Test uninstall_skills handles missing skills directory."""
-    # Don't create skills dir - it doesn't exist
-
-    removed = uninstall_skills()
-
-    assert removed == 0
 
 
 # --- uninstall_ccstatusline tests ---
@@ -228,18 +165,11 @@ def test_cli_uninstall_with_yes_flag(
     mock_scope_dir.mkdir()
     (mock_scope_dir / "sessions").mkdir()
 
-    # Create skills
-    skills_dir = mock_claude_dir / "skills"
-    skills_dir.mkdir()
-    (skills_dir / "ralph").mkdir()
-    (skills_dir / "ralph" / "SKILL.md").write_text("# ralph")
-
     result = runner.invoke(uninstall, ["--yes"])
 
     assert result.exit_code == 0
     assert "Scope has been uninstalled" in result.output
     assert not mock_scope_dir.exists()
-    assert not (skills_dir / "ralph").exists()
 
 
 def test_cli_uninstall_with_keep_data_flag(
@@ -304,26 +234,3 @@ def test_cli_uninstall_shows_binary_note(runner, mock_claude_dir, monkeypatch, t
     assert "binaries were found" in result.output
     assert "pip uninstall scopeai" in result.output
 
-
-def test_cli_uninstall_reports_removed_counts(
-    runner, mock_claude_dir, mock_scope_dir, monkeypatch
-):
-    """Test CLI uninstall reports the number of skills removed."""
-    # Setup mocks
-    monkeypatch.setattr("scope.commands.uninstall.uninstall_hooks", lambda: None)
-    monkeypatch.setattr("scope.commands.uninstall.uninstall_tmux_hooks", lambda: None)
-    monkeypatch.setattr(
-        "scope.commands.uninstall.find_scope_binaries", lambda: []
-    )
-
-    # Create 3 skills
-    skills_dir = mock_claude_dir / "skills"
-    skills_dir.mkdir()
-    for skill_name in ["ralph", "tdd", "rlm"]:
-        (skills_dir / skill_name).mkdir()
-        (skills_dir / skill_name / "SKILL.md").write_text(f"# {skill_name}")
-
-    result = runner.invoke(uninstall, ["--yes", "--keep-data"])
-
-    assert result.exit_code == 0
-    assert "Removed 3 skills" in result.output
