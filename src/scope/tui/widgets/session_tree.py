@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from textual.widgets import DataTable
 
 from scope.core.session import Session
-from scope.core.state import load_loop_state
+from scope.core.state import ensure_scope_dir, load_loop_state
 
 
 @dataclass
@@ -83,12 +83,20 @@ def _build_tree(
             if loop_state is None:
                 # Normal session — same as before
                 has_children = bool(children.get(session.id))
+
+                # Check if this is an evolution session
+                scope_dir = ensure_scope_dir()
+                session_dir = scope_dir / "sessions" / session.id
+                evolve_marker = session_dir / "evolve_target"
+                mode = "evolve" if evolve_marker.exists() else ""
+
                 result.append(
                     TreeNode(
                         session=session,
                         depth=depth,
                         has_children=has_children,
                         node_type="session",
+                        mode=mode,
                     )
                 )
                 if session.id not in collapsed:

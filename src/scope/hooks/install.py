@@ -523,6 +523,15 @@ def ensure_setup(quiet: bool = True, force: bool = False) -> None:
             if not quiet:
                 print(f"Warning: Failed to install skill: {e}", file=sys.stderr)
 
+    # Initialize evolution baseline (snapshot v0 of skill)
+    try:
+        from scope.core.evolve import init_baseline
+
+        init_baseline()
+    except Exception as e:
+        if not quiet:
+            print(f"Warning: Failed to init evolution baseline: {e}", file=sys.stderr)
+
     # Check and update tmux hooks (requires tmux)
     if tmux_is_installed():
         tmux_ver = _tmux_hooks_version()
