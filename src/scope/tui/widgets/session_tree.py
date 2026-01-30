@@ -1,17 +1,42 @@
 """Session list widget for scope TUI."""
 
 from collections import defaultdict
+from dataclasses import dataclass
 
 from textual.widgets import DataTable
 
 from scope.core.session import Session
+from scope.core.state import load_loop_state
+
+
+@dataclass
+class TreeNode:
+    """A node in the session display tree.
+
+    Attributes:
+        session: The underlying Session object.
+        depth: Indentation level in the tree.
+        has_children: Whether this node has visible children.
+        node_type: "session" (normal), "loop" (loop header), or "iteration" (loop child).
+        iteration_label: Display label like "Iter 0", "Iter 1", etc.
+        loop_info: Summary like "iter 2/3" for loop headers.
+        mode: "do", "check", or "" for the Mode column.
+    """
+
+    session: Session
+    depth: int
+    has_children: bool
+    node_type: str = "session"  # "session" | "loop" | "iteration"
+    iteration_label: str = ""
+    loop_info: str = ""
+    mode: str = ""
 
 
 def _build_tree(
     sessions: list[Session],
     collapsed: set[str],
     hide_done: bool = False,
-) -> list[tuple[Session, int, bool]]:
+) -> list[TreeNode]:
     """Build tree structure from flat session list.
 
     Args:
@@ -20,16 +45,14 @@ def _build_tree(
         hide_done: Whether to hide done/aborted sessions.
 
     Returns:
-        List of (session, depth, has_children) tuples in display order (DFS).
+        List of TreeNode objects in display order (DFS).
     """
     # Filter out done/aborted if requested
     if hide_done:
-        # Build set of IDs to hide (done/aborted/exited sessions and their descendants)
         hidden_ids: set[str] = set()
         for s in sessions:
             if s.state in {"done", "aborted", "exited"}:
                 hidden_ids.add(s.id)
-        # Also hide children of hidden sessions
         changed = True
         while changed:
             changed = False
@@ -48,16 +71,115 @@ def _build_tree(
     for parent_id in children:
         children[parent_id].sort(key=lambda s: [int(x) for x in s.id.split(".")])
 
-    # DFS traversal starting from root sessions (parent="")
-    result: list[tuple[Session, int, bool]] = []
+    # Build lookup by id
+    session_by_id: dict[str, Session] = {s.id: s for s in sessions}
+
+    result: list[TreeNode] = []
 
     def traverse(parent: str, depth: int) -> None:
         for session in children.get(parent, []):
-            has_children = bool(children.get(session.id))
-            result.append((session, depth, has_children))
-            # Skip children if this node is collapsed
-            if session.id not in collapsed:
-                traverse(session.id, depth + 1)
+            loop_state = load_loop_state(session.id)
+
+            if loop_state is None:
+                # Normal session — same as before
+                has_children = bool(children.get(session.id))
+                result.append(TreeNode(
+                    session=session,
+                    depth=depth,
+                    has_children=has_children,
+                    node_type="session",
+                ))
+                if session.id not in collapsed:
+                    traverse(session.id, depth + 1)
+            else:
+                # Loop session — emit header + iteration children
+                history = loop_state.get("history", [])
+                max_iter = loop_state.get("max_iterations", 0)
+                current_iter = loop_state.get("current_iteration", 0)
+
+                # Collect doer session IDs from history
+                doer_ids: set[str] = set()
+                for entry in history:
+                    ds = entry.get("doer_session")
+                    if ds:
+                        doer_ids.add(str(ds))
+
+                # All child sessions of this loop
+                child_sessions = children.get(session.id, [])
+
+                # The loop header always "has children" (the iterations)
+                has_iter_children = True
+
+                # Build loop_info string
+                if session.state == "running":
+                    loop_info = f"iter {current_iter + 1}/{max_iter}"
+                elif history:
+                    last = history[-1]
+                    verdict = last.get("verdict", "")
+                    loop_info = verdict if verdict else "done"
+                else:
+                    loop_info = ""
+
+                # Use "loop:" prefix key for the header
+                result.append(TreeNode(
+                    session=session,
+                    depth=depth,
+                    has_children=has_iter_children,
+                    node_type="loop",
+                    loop_info=loop_info,
+                    mode="loop",
+                ))
+
+                if session.id not in collapsed:
+                    # Iteration 0: the loop session itself is the first doer
+                    iter_label = "Iter 0"
+                    result.append(TreeNode(
+                        session=session,
+                        depth=depth + 1,
+                        has_children=False,
+                        node_type="iteration",
+                        iteration_label=iter_label,
+                        mode="do",
+                    ))
+
+                    # Remaining iterations from history — match children
+                    # Sort history by iteration number
+                    sorted_history = sorted(history, key=lambda h: h.get("iteration", 0))
+
+                    for entry in sorted_history:
+                        ds_id = str(entry.get("doer_session", ""))
+                        iteration_num = entry.get("iteration", 0)
+                        # iteration 0 is the original session (already emitted)
+                        if iteration_num == 0:
+                            continue
+                        iter_label = f"Iter {iteration_num}"
+                        child_session = session_by_id.get(ds_id)
+                        if child_session:
+                            result.append(TreeNode(
+                                session=child_session,
+                                depth=depth + 1,
+                                has_children=False,
+                                node_type="iteration",
+                                iteration_label=iter_label,
+                                mode="do",
+                            ))
+
+                    # Any child that is NOT a doer is a checker
+                    for child in child_sessions:
+                        if child.id not in doer_ids:
+                            result.append(TreeNode(
+                                session=child,
+                                depth=depth + 1,
+                                has_children=False,
+                                node_type="iteration",
+                                iteration_label="check",
+                                mode="check",
+                            ))
+
+                # Don't traverse children normally — they're already placed above
+                # But we do need to traverse grandchildren of child sessions
+                # that aren't part of the loop iteration display
+                # (not needed for now — loop children are leaf doer/checker sessions)
 
     traverse("", 0)
     return result
@@ -66,7 +188,7 @@ def _build_tree(
 class SessionTable(DataTable):
     """DataTable widget displaying scope sessions.
 
-    Columns: ID, Task, Status, Activity
+    Columns: ID, Task, Status, Mode, Activity
     Sessions are displayed in tree hierarchy with indentation.
     """
 
@@ -79,7 +201,7 @@ class SessionTable(DataTable):
 
     def on_mount(self) -> None:
         """Set up the table columns on mount."""
-        self.add_columns("ID", "Task", "Status", "Activity")
+        self.add_columns("ID", "Task", "Status", "Mode", "Activity")
         self.cursor_type = "row"
 
     def watch_cursor_row(self, old_row: int | None, new_row: int | None) -> None:
@@ -134,7 +256,6 @@ class SessionTable(DataTable):
     def _render_sessions(self) -> None:
         """Render sessions to the table."""
         # Preserve current cursor selection before clearing rows.
-        # Skip if _selected_session_id is already set (e.g., by set_selected_session).
         if (
             self._selected_session_id is None
             and self.cursor_row is not None
@@ -150,7 +271,6 @@ class SessionTable(DataTable):
             except Exception:
                 pass
 
-        # Use stored selection (tracked by watch_cursor_row or cursor_row above)
         selected_session_id = self._selected_session_id
 
         self.clear()
@@ -158,49 +278,70 @@ class SessionTable(DataTable):
         # Build tree and iterate in display order
         tree = _build_tree(self._sessions, self._collapsed, self._hide_done)
 
-        for session, depth, has_children in tree:
-            task = session.task if session.task else "(pending...)"
-            # Truncate long tasks
-            if len(task) > 40:
-                task = task[:37] + "..."
+        for node in tree:
+            session = node.session
 
-            # Get activity from session directory if it exists
-            activity = self._get_activity(session.id, session.state)
-
-            # Add indentation and tree indicator for nested sessions
-            indent = "  " * depth
-            if has_children:
+            if node.node_type == "loop":
+                # Loop header row
+                task = session.task if session.task else "(pending...)"
+                if len(task) > 40:
+                    task = task[:37] + "..."
+                activity = node.loop_info
+                indent = "  " * node.depth
                 indicator = "▶ " if session.id in self._collapsed else "▼ "
+                display_id = f"{indent}{indicator}{session.id}"
+                row_key = f"loop:{session.id}"
+            elif node.node_type == "iteration":
+                # Iteration child row
+                task = node.iteration_label
+                if len(task) > 40:
+                    task = task[:37] + "..."
+                activity = self._get_activity(session.id, session.state)
+                indent = "  " * node.depth
+                display_id = f"{indent}  {session.id}"
+                row_key = session.id
             else:
-                indicator = "  "
-            display_id = f"{indent}{indicator}{session.id}"
+                # Normal session row
+                task = session.task if session.task else "(pending...)"
+                if len(task) > 40:
+                    task = task[:37] + "..."
+                activity = self._get_activity(session.id, session.state)
+                indent = "  " * node.depth
+                if node.has_children:
+                    indicator = "▶ " if session.id in self._collapsed else "▼ "
+                else:
+                    indicator = "  "
+                display_id = f"{indent}{indicator}{session.id}"
+                row_key = session.id
 
             self.add_row(
                 display_id,
                 task,
                 session.state,
+                node.mode,
                 activity,
-                key=session.id,
+                key=row_key,
             )
 
         # Restore selection if the session still exists
         if selected_session_id is not None:
-            # Try the selected session, then walk up to parents
             session_id = selected_session_id
             while session_id:
-                try:
-                    row_index = self.get_row_index(session_id)
-                    self.move_cursor(row=row_index)
-                    self._selected_session_id = session_id
+                # Try both raw ID and loop: prefixed
+                for key_candidate in [session_id, f"loop:{session_id}"]:
+                    try:
+                        row_index = self.get_row_index(key_candidate)
+                        self.move_cursor(row=row_index)
+                        self._selected_session_id = session_id
+                        return
+                    except Exception:
+                        pass
+                # Walk up to parent
+                if "." in session_id:
+                    session_id = session_id.rsplit(".", 1)[0]
+                else:
+                    self._selected_session_id = None
                     break
-                except Exception:
-                    # Session not found, try parent (e.g., "0.1.2" -> "0.1" -> "0")
-                    if "." in session_id:
-                        session_id = session_id.rsplit(".", 1)[0]
-                    else:
-                        # No parent, clear stored selection
-                        self._selected_session_id = None
-                        break
 
     def _get_activity(self, session_id: str, session_state: str) -> str:
         """Get the current activity for a session.

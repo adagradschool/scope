@@ -8,7 +8,7 @@ import pytest
 from scope.core.session import Session
 from scope.core.state import load_all, save_session
 from scope.tui.app import ScopeApp
-from scope.tui.widgets.session_tree import SessionTable, _build_tree
+from scope.tui.widgets.session_tree import SessionTable, TreeNode, _build_tree
 
 skip_in_scope = pytest.mark.skipif(
     "SCOPE_SESSION_ID" in os.environ,
@@ -185,7 +185,7 @@ async def test_session_table_shows_activity(mock_scope_base):
     async with app.run_test() as pilot:
         table = app.query_one(SessionTable)
         row_data = table.get_row_at(0)
-        assert row_data[3] == "editing main.py"
+        assert row_data[4] == "editing main.py"
 
 
 @skip_in_scope
@@ -282,13 +282,15 @@ async def test_new_session_appears_in_table(mock_scope_base):
             assert row_data[1] == "(pending...)"  # Task (empty shows pending)
 
 
-def test_build_tree_empty():
+@patch("scope.tui.widgets.session_tree.load_loop_state", return_value=None)
+def test_build_tree_empty(_mock_lls):
     """Test _build_tree with no sessions."""
     result = _build_tree([], collapsed=set())
     assert result == []
 
 
-def test_build_tree_semver_ordering():
+@patch("scope.tui.widgets.session_tree.load_loop_state", return_value=None)
+def test_build_tree_semver_ordering(_mock_lls):
     """Test _build_tree sorts IDs by numeric segments, not lexicographically.
 
     String sort would produce: 0.1, 0.10, 0.2
@@ -332,13 +334,14 @@ def test_build_tree_semver_ordering():
 
     # Should be sorted numerically: 0, 0.1, 0.2, 0.10
     assert len(result) == 4
-    assert result[0][0].id == "0"
-    assert result[1][0].id == "0.1"
-    assert result[2][0].id == "0.2"
-    assert result[3][0].id == "0.10"
+    assert result[0].session.id == "0"
+    assert result[1].session.id == "0.1"
+    assert result[2].session.id == "0.2"
+    assert result[3].session.id == "0.10"
 
 
-def test_build_tree_single_root():
+@patch("scope.tui.widgets.session_tree.load_loop_state", return_value=None)
+def test_build_tree_single_root(_mock_lls):
     """Test _build_tree with a single root session."""
     session = Session(
         id="0",
@@ -350,11 +353,14 @@ def test_build_tree_single_root():
     )
     result = _build_tree([session], collapsed=set())
     assert len(result) == 1
-    # Returns (session, depth, has_children)
-    assert result[0] == (session, 0, False)
+    assert result[0].session == session
+    assert result[0].depth == 0
+    assert result[0].has_children is False
+    assert result[0].node_type == "session"
 
 
-def test_build_tree_with_children():
+@patch("scope.tui.widgets.session_tree.load_loop_state", return_value=None)
+def test_build_tree_with_children(_mock_lls):
     """Test _build_tree with parent and children."""
     parent = Session(
         id="0",
@@ -386,12 +392,13 @@ def test_build_tree_with_children():
 
     # Output should be parent first, then children sorted by ID
     assert len(result) == 3
-    assert result[0] == (parent, 0, True)  # has_children=True
-    assert result[1] == (child1, 1, False)
-    assert result[2] == (child2, 1, False)
+    assert result[0].session == parent and result[0].depth == 0 and result[0].has_children is True
+    assert result[1].session == child1 and result[1].depth == 1 and result[1].has_children is False
+    assert result[2].session == child2 and result[2].depth == 1 and result[2].has_children is False
 
 
-def test_build_tree_nested():
+@patch("scope.tui.widgets.session_tree.load_loop_state", return_value=None)
+def test_build_tree_nested(_mock_lls):
     """Test _build_tree with deeply nested sessions."""
     root = Session(
         id="0",
@@ -421,12 +428,13 @@ def test_build_tree_nested():
     result = _build_tree([grandchild, root, child], collapsed=set())
 
     assert len(result) == 3
-    assert result[0] == (root, 0, True)
-    assert result[1] == (child, 1, True)
-    assert result[2] == (grandchild, 2, False)
+    assert result[0].session == root and result[0].depth == 0 and result[0].has_children is True
+    assert result[1].session == child and result[1].depth == 1 and result[1].has_children is True
+    assert result[2].session == grandchild and result[2].depth == 2 and result[2].has_children is False
 
 
-def test_build_tree_multiple_roots():
+@patch("scope.tui.widgets.session_tree.load_loop_state", return_value=None)
+def test_build_tree_multiple_roots(_mock_lls):
     """Test _build_tree with multiple root sessions."""
     root1 = Session(
         id="0",
@@ -457,12 +465,13 @@ def test_build_tree_multiple_roots():
 
     # Should be sorted: 0, 0.0, 1
     assert len(result) == 3
-    assert result[0] == (root1, 0, True)
-    assert result[1] == (child_of_0, 1, False)
-    assert result[2] == (root2, 0, False)
+    assert result[0].session == root1 and result[0].depth == 0 and result[0].has_children is True
+    assert result[1].session == child_of_0 and result[1].depth == 1 and result[1].has_children is False
+    assert result[2].session == root2 and result[2].depth == 0 and result[2].has_children is False
 
 
-def test_build_tree_collapsed():
+@patch("scope.tui.widgets.session_tree.load_loop_state", return_value=None)
+def test_build_tree_collapsed(_mock_lls):
     """Test _build_tree with collapsed nodes skips their children."""
     root = Session(
         id="0",
@@ -493,17 +502,18 @@ def test_build_tree_collapsed():
     result = _build_tree([grandchild, root, child], collapsed={"0"})
 
     assert len(result) == 1
-    assert result[0] == (root, 0, True)  # Still has_children=True
+    assert result[0].session == root and result[0].depth == 0 and result[0].has_children is True
 
     # Collapse just the child - should show root and child but not grandchild
     result = _build_tree([grandchild, root, child], collapsed={"0.0"})
 
     assert len(result) == 2
-    assert result[0] == (root, 0, True)
-    assert result[1] == (child, 1, True)  # Still has_children=True
+    assert result[0].session == root and result[0].depth == 0 and result[0].has_children is True
+    assert result[1].session == child and result[1].depth == 1 and result[1].has_children is True
 
 
-def test_build_tree_hide_done():
+@patch("scope.tui.widgets.session_tree.load_loop_state", return_value=None)
+def test_build_tree_hide_done(_mock_lls):
     """Test _build_tree with hide_done=True filters out done/aborted sessions."""
     root = Session(
         id="0",
@@ -550,7 +560,7 @@ def test_build_tree_hide_done():
     )
 
     assert len(result) == 1
-    assert result[0] == (root, 0, False)
+    assert result[0].session == root and result[0].depth == 0 and result[0].has_children is False
 
 
 @skip_in_scope
