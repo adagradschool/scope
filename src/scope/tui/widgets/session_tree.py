@@ -83,12 +83,14 @@ def _build_tree(
             if loop_state is None:
                 # Normal session — same as before
                 has_children = bool(children.get(session.id))
-                result.append(TreeNode(
-                    session=session,
-                    depth=depth,
-                    has_children=has_children,
-                    node_type="session",
-                ))
+                result.append(
+                    TreeNode(
+                        session=session,
+                        depth=depth,
+                        has_children=has_children,
+                        node_type="session",
+                    )
+                )
                 if session.id not in collapsed:
                     traverse(session.id, depth + 1)
             else:
@@ -121,30 +123,36 @@ def _build_tree(
                     loop_info = ""
 
                 # Use "loop:" prefix key for the header
-                result.append(TreeNode(
-                    session=session,
-                    depth=depth,
-                    has_children=has_iter_children,
-                    node_type="loop",
-                    loop_info=loop_info,
-                    mode="loop",
-                ))
+                result.append(
+                    TreeNode(
+                        session=session,
+                        depth=depth,
+                        has_children=has_iter_children,
+                        node_type="loop",
+                        loop_info=loop_info,
+                        mode="loop",
+                    )
+                )
 
                 if session.id not in collapsed:
                     # Iteration 0: the loop session itself is the first doer
                     iter_label = "Iter 0"
-                    result.append(TreeNode(
-                        session=session,
-                        depth=depth + 1,
-                        has_children=False,
-                        node_type="iteration",
-                        iteration_label=iter_label,
-                        mode="do",
-                    ))
+                    result.append(
+                        TreeNode(
+                            session=session,
+                            depth=depth + 1,
+                            has_children=False,
+                            node_type="iteration",
+                            iteration_label=iter_label,
+                            mode="do",
+                        )
+                    )
 
                     # Remaining iterations from history — match children
                     # Sort history by iteration number
-                    sorted_history = sorted(history, key=lambda h: h.get("iteration", 0))
+                    sorted_history = sorted(
+                        history, key=lambda h: h.get("iteration", 0)
+                    )
 
                     for entry in sorted_history:
                         ds_id = str(entry.get("doer_session", ""))
@@ -155,26 +163,30 @@ def _build_tree(
                         iter_label = f"Iter {iteration_num}"
                         child_session = session_by_id.get(ds_id)
                         if child_session:
-                            result.append(TreeNode(
-                                session=child_session,
-                                depth=depth + 1,
-                                has_children=False,
-                                node_type="iteration",
-                                iteration_label=iter_label,
-                                mode="do",
-                            ))
+                            result.append(
+                                TreeNode(
+                                    session=child_session,
+                                    depth=depth + 1,
+                                    has_children=False,
+                                    node_type="iteration",
+                                    iteration_label=iter_label,
+                                    mode="do",
+                                )
+                            )
 
                     # Any child that is NOT a doer is a checker
                     for child in child_sessions:
                         if child.id not in doer_ids:
-                            result.append(TreeNode(
-                                session=child,
-                                depth=depth + 1,
-                                has_children=False,
-                                node_type="iteration",
-                                iteration_label="check",
-                                mode="check",
-                            ))
+                            result.append(
+                                TreeNode(
+                                    session=child,
+                                    depth=depth + 1,
+                                    has_children=False,
+                                    node_type="iteration",
+                                    iteration_label="check",
+                                    mode="check",
+                                )
+                            )
 
                 # Don't traverse children normally — they're already placed above
                 # But we do need to traverse grandchildren of child sessions
