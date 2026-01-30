@@ -1,5 +1,41 @@
 # Scope Tech Tree
 
+## The Fundamental Primitive: Loops
+
+Every `scope spawn` is a **loop** — a doer/checker pair where the checker both verifies and decides (accept/retry/terminate). The `--checker` flag is **required** — every task must declare its verification. Default max iterations is 3.
+
+```
+┌─────────────────────────┐          ┌─────────────────────────┐
+│       Task 1            │          │       Task 2            │
+│  ┌─────────────────┐    │          │  ┌─────────────────┐    │
+│  │    Doer          │    │          │  │    Doer          │    │
+│  │  (does the work) │    │          │  │  (does the work) │    │
+│  ├──────────────────┤    │ ──────▶  │  ├──────────────────┤    │
+│  │    Checker       │    │          │  │    Checker       │    │
+│  │  (verify+decide) │    │          │  │  (verify+decide) │    │
+│  └─────────────────┘    │          │  └─────────────────┘    │
+└─────────────────────────┘          └─────────────────────────┘
+```
+
+This unifies all feedback patterns under one primitive:
+
+| Pattern | Doer | Checker | Max Iter |
+|---------|------|---------|----------|
+| TDD red | "Write failing test" | `pytest tests/` (expect fail) | 3 |
+| TDD green | "Make test pass" | `pytest tests/` (expect pass) | 5 |
+| RALPH | "Improve: {task}" | `agent: Critique this. Verdict: ACCEPT/RETRY` | 5 |
+| Maker-checker | "Implement: {task}" | `agent: Review. Verdict: ACCEPT/RETRY` | 3 |
+| Simple task | "{task}" | `agent: Verify the task was completed correctly` | 3 |
+
+**Key design decisions:**
+- **Checker = mediator**: The checker verifies output AND recommends verdict. No third agent.
+- **Emergent nesting**: Any doer can itself spawn sub-loops. Scope doesn't track depth.
+- **Checker is mandatory**: Forces intentional verification design.
+- **Max iterations default 3**: Hard cap prevents runaway loops.
+- **Both doer and checker are tmux sessions**: Fully visible, introspectable, steerable.
+
+---
+
 ## The Electricity
 
 Skills aren't deterministic programs — they're intelligent orchestration where the orchestrator agent must *think* at every step. "What should the red phase test?" "What critique matters here?" "Did this session drift?"
@@ -7,10 +43,15 @@ Skills aren't deterministic programs — they're intelligent orchestration where
 The electricity of Scope is **the quality of the orchestration loop**:
 
 ```
-Contract → Sub-agent execution → Feedback → Orchestrator decision → Next contract
+Contract → Sub-agent execution → Checker verification → Orchestrator decision → Next contract
 ```
 
-Every feature in this tree improves some part of this loop. They're organized around three primitives.
+Every feature in this tree improves some part of this loop. They're organized around three primitives. The loop primitive (above) subsumes F1–F4:
+
+- **F1 (Feedback Signals)** → command checkers ARE feedback signals
+- **F2 (Hierarchical Decomposition)** → emergent nesting of loops
+- **F3 (Loop Termination)** → `--max-iterations` + checker verdict (ACCEPT/RETRY/TERMINATE)
+- **F4 (Pattern Commitment)** → patterns are loop templates with specific checker configurations
 
 ---
 

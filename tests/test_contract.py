@@ -1,6 +1,6 @@
 """Tests for contract generation."""
 
-from scope.core.contract import generate_contract
+from scope.core.contract import generate_checker_contract, generate_contract
 
 
 def test_generate_contract_simple():
@@ -365,3 +365,92 @@ def test_generate_contract_full_with_verify():
     verify_idx = contract.index("# Verification")
 
     assert deps_idx < phase_idx < intent_idx < results_idx < task_idx < scope_idx < verify_idx
+
+
+# --- Checker contract tests ---
+
+
+def test_generate_checker_contract_basic():
+    """Test basic checker contract generation."""
+    contract = generate_checker_contract(
+        checker_prompt="Verify the code is correct",
+        doer_result="I wrote a hello world function.",
+        iteration=0,
+    )
+
+    assert "# Role" in contract
+    assert "checker" in contract.lower()
+    assert "ACCEPT" in contract
+    assert "RETRY" in contract
+    assert "TERMINATE" in contract
+    assert "# Checker Criteria" in contract
+    assert "Verify the code is correct" in contract
+    assert "# Doer Output" in contract
+    assert "hello world function" in contract
+    assert "# Iteration" in contract
+    assert "iteration 0" in contract
+
+
+def test_generate_checker_contract_with_history():
+    """Test checker contract includes iteration history."""
+    history = [
+        {"iteration": 0, "verdict": "retry", "feedback": "Missing error handling"},
+        {"iteration": 1, "verdict": "retry", "feedback": "Still missing edge cases"},
+    ]
+
+    contract = generate_checker_contract(
+        checker_prompt="Check completeness",
+        doer_result="Updated implementation.",
+        iteration=2,
+        history=history,
+    )
+
+    assert "# Prior Iterations" in contract
+    assert "Iteration 0" in contract
+    assert "RETRY" in contract
+    assert "Missing error handling" in contract
+    assert "Iteration 1" in contract
+    assert "Still missing edge cases" in contract
+    assert "iteration 2" in contract
+
+
+def test_generate_checker_contract_no_history():
+    """Test checker contract without history omits that section."""
+    contract = generate_checker_contract(
+        checker_prompt="Check it",
+        doer_result="Output",
+        iteration=0,
+        history=None,
+    )
+
+    assert "# Prior Iterations" not in contract
+
+
+def test_generate_checker_contract_empty_history():
+    """Test checker contract with empty history omits that section."""
+    contract = generate_checker_contract(
+        checker_prompt="Check it",
+        doer_result="Output",
+        iteration=0,
+        history=[],
+    )
+
+    assert "# Prior Iterations" not in contract
+
+
+def test_generate_checker_contract_section_ordering():
+    """Test checker contract sections are in correct order."""
+    contract = generate_checker_contract(
+        checker_prompt="Review code",
+        doer_result="Code output",
+        iteration=1,
+        history=[{"iteration": 0, "verdict": "retry", "feedback": "Needs work"}],
+    )
+
+    role_idx = contract.index("# Role")
+    criteria_idx = contract.index("# Checker Criteria")
+    output_idx = contract.index("# Doer Output")
+    iter_idx = contract.index("# Iteration")
+    history_idx = contract.index("# Prior Iterations")
+
+    assert role_idx < criteria_idx < output_idx < iter_idx < history_idx

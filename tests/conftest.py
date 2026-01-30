@@ -62,6 +62,9 @@ def cleanup_scope_windows(monkeypatch, worker_id):
     # Skip ready check in tests since we're not using real Claude Code
     monkeypatch.setenv("SCOPE_SKIP_READY_CHECK", "1")
 
+    # Skip loop execution in tests since we're not running real sessions
+    monkeypatch.setenv("SCOPE_SKIP_LOOP", "1")
+
     # Clean before test - kill the isolated test server if it exists
     subprocess.run(
         ["tmux", "-L", test_socket, "kill-server"],

@@ -5,7 +5,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from scope.core.session import Session
-from scope.core.state import ensure_scope_dir, load_all, load_session, next_id, save_session
+from scope.core.state import (
+    ensure_scope_dir,
+    load_all,
+    load_loop_state,
+    load_session,
+    next_id,
+    save_loop_state,
+    save_session,
+)
 
 
 def _call_next_id_with_scope_dir(scope_dir_str: str) -> str:
@@ -326,3 +334,80 @@ def test_next_id_concurrent_returns_unique_ids(tmp_path):
     # IDs should be sequential integers 0 through total_calls-1
     expected_ids = {str(i) for i in range(total_calls)}
     assert set(results) == expected_ids
+
+
+# --- Loop state tests ---
+
+
+def test_save_and_load_loop_state(mock_scope_base):
+    """Test saving and loading loop state."""
+    session = Session(
+        id="0",
+        task="Test task",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    save_session(session)
+
+    save_loop_state(
+        session_id="0",
+        checker="pytest tests/",
+        max_iterations=3,
+        current_iteration=1,
+        history=[
+            {"iteration": 0, "doer_session": "0.1", "verdict": "retry", "feedback": "3 tests fail"},
+        ],
+    )
+
+    state = load_loop_state("0")
+    assert state is not None
+    assert state["checker"] == "pytest tests/"
+    assert state["max_iterations"] == 3
+    assert state["current_iteration"] == 1
+    assert len(state["history"]) == 1
+    assert state["history"][0]["verdict"] == "retry"
+    assert state["history"][0]["feedback"] == "3 tests fail"
+
+
+def test_load_loop_state_nonexistent(mock_scope_base):
+    """Test loading loop state for session without loop state."""
+    session = Session(
+        id="0",
+        task="Test task",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    save_session(session)
+
+    state = load_loop_state("0")
+    assert state is None
+
+
+def test_load_loop_state_no_session(mock_scope_base):
+    """Test loading loop state for nonexistent session."""
+    state = load_loop_state("999")
+    assert state is None
+
+
+def test_save_loop_state_overwrites(mock_scope_base):
+    """Test saving loop state overwrites previous state."""
+    session = Session(
+        id="0",
+        task="Test task",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    save_session(session)
+
+    save_loop_state("0", "pytest", 3, 0, [])
+    save_loop_state("0", "pytest", 3, 1, [{"iteration": 0, "verdict": "retry", "feedback": "fail"}])
+
+    state = load_loop_state("0")
+    assert state["current_iteration"] == 1
+    assert len(state["history"]) == 1

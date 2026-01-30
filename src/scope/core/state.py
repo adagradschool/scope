@@ -609,3 +609,77 @@ def load_claude_session_id(session_id: str) -> str | None:
     if claude_session_file.exists():
         return claude_session_file.read_text().strip()
     return None
+
+
+def save_loop_state(
+    session_id: str,
+    checker: str,
+    max_iterations: int,
+    current_iteration: int,
+    history: list[dict],
+) -> None:
+    """Save loop state for a session.
+
+    Writes loop_state.json atomically (write to temp, rename).
+
+    Args:
+        session_id: The session ID.
+        checker: The checker specification (command or "agent:..." prompt).
+        max_iterations: Maximum loop iterations.
+        current_iteration: Current iteration number.
+        history: List of iteration records with keys: iteration, doer_session, verdict, feedback.
+
+    Raises:
+        FileNotFoundError: If session doesn't exist.
+    """
+    import tempfile
+
+    import orjson
+
+    scope_dir = _get_scope_dir()
+    session_dir = _get_session_dir(scope_dir, session_id)
+
+    if not session_dir.exists():
+        raise FileNotFoundError(f"Session {session_id} not found")
+
+    state = {
+        "checker": checker,
+        "max_iterations": max_iterations,
+        "current_iteration": current_iteration,
+        "history": history,
+    }
+
+    target = session_dir / "loop_state.json"
+    fd, tmp_path = tempfile.mkstemp(dir=session_dir, suffix=".tmp")
+    try:
+        with open(fd, "wb") as f:
+            f.write(orjson.dumps(state))
+        Path(tmp_path).rename(target)
+    except BaseException:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
+
+
+def load_loop_state(session_id: str) -> dict | None:
+    """Load loop state for a session.
+
+    Args:
+        session_id: The session ID.
+
+    Returns:
+        Dictionary with loop state, or None if no loop state exists.
+        Keys: checker, max_iterations, current_iteration, history.
+    """
+    import orjson
+
+    scope_dir = _get_scope_dir()
+    session_dir = _get_session_dir(scope_dir, session_id)
+
+    state_file = session_dir / "loop_state.json"
+    if not state_file.exists():
+        return None
+
+    try:
+        return orjson.loads(state_file.read_bytes())
+    except (orjson.JSONDecodeError, ValueError):
+        return None

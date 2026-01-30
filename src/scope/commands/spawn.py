@@ -1,10 +1,12 @@
 """Spawn command for scope.
 
 Creates a new scope session with Claude Code running in a tmux window.
+Every spawn is a loop: doer → checker → (retry or accept), up to --max-iterations.
 """
 
 import os
 import shlex
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,7 +14,7 @@ from pathlib import Path
 import click
 from watchfiles import watch
 
-from scope.core.contract import generate_contract
+from scope.core.contract import generate_checker_contract, generate_contract
 from scope.core.dag import detect_cycle
 from scope.core.session import Session
 from scope.core.state import (
@@ -21,6 +23,7 @@ from scope.core.state import (
     load_session_by_alias,
     next_id,
     resolve_id,
+    save_loop_state,
     save_session,
 )
 from scope.core.tmux import (
@@ -164,11 +167,27 @@ def _send_contract(target: str, contract: str) -> None:
     help="Pass --dangerously-skip-permissions to spawned Claude instance",
 )
 @click.option(
-    "--verify",
-    "verify_spec",
+    "--checker",
+    "checker",
+    required=True,
+    help="REQUIRED. Command or agent prompt to verify doer output. "
+    'Prefix with "agent:" for an agent checker (runs as a tmux session). '
+    'Shell command: exit 0 = pass. Example: --checker "pytest tests/" or '
+    '--checker "agent: Review for edge cases. Verdict: ACCEPT/RETRY/TERMINATE"',
+)
+@click.option(
+    "--max-iterations",
+    "max_iterations",
+    type=int,
+    default=3,
+    show_default=True,
+    help="Maximum loop iterations before terminating.",
+)
+@click.option(
+    "--checker-model",
+    "checker_model",
     default="",
-    help="Comma-separated verification criteria. Can be commands or natural language. "
-    'Example: --verify "pytest tests/,ruff check,all types pass"',
+    help="Model for agent checker (default: same as doer).",
 )
 @click.option(
     "--pattern",
@@ -186,10 +205,15 @@ def spawn(
     plan: bool,
     model: str,
     dangerously_skip_permissions: bool,
-    verify_spec: str,
+    checker: str,
+    max_iterations: int,
+    checker_model: str,
     pattern: str | None,
 ) -> None:
     """Spawn a new scope session.
+
+    Every spawn is a loop: doer → checker → (retry or accept).
+    The --checker flag is required — every task must declare its verification.
 
     Creates a tmux window running Claude Code with the given prompt.
     Prints the session ID to stdout.
@@ -199,9 +223,11 @@ def spawn(
 
     Examples:
 
-        scope spawn "Write tests for the auth module in src/auth/"
+        scope spawn "Write tests for auth" --checker "pytest tests/"
 
-        scope spawn "Fix the bug in database.py - connection times out after 30s"
+        scope spawn "Implement feature" --checker "agent: Review for correctness"
+
+        scope spawn "Fix bug" --checker "python verify.py" --max-iterations 5
     """
     # Check if flag was passed via parent context
     if ctx.obj and ctx.obj.get("dangerously_skip_permissions"):
@@ -219,11 +245,6 @@ def spawn(
                 err=True,
             )
             raise SystemExit(1)
-
-    # Parse verify criteria
-    verify_criteria: list[str] | None = None
-    if verify_spec:
-        verify_criteria = [c.strip() for c in verify_spec.split(",") if c.strip()]
 
     # Parse and resolve dependencies
     depends_on: list[str] = []
@@ -369,10 +390,18 @@ def spawn(
             prompt=prompt,
             depends_on=depends_on if depends_on else None,
             prior_results=prior_results,
-            verify=verify_criteria,
             pattern=pattern,
         )
         (session_dir / "contract.md").write_text(contract)
+
+        # Initialize loop state
+        save_loop_state(
+            session_id=session_id,
+            checker=checker,
+            max_iterations=max_iterations,
+            current_iteration=0,
+            history=[],
+        )
 
         # Wait for Claude Code to signal readiness via SessionStart hook
         # Skip if SCOPE_SKIP_READY_CHECK is set (used in tests)
@@ -471,5 +500,326 @@ def spawn(
             )
         raise SystemExit(1)
 
-    # Output session ID
+    # Output session ID (printed before loop starts so callers can track it)
     click.echo(session_id)
+
+    # --- Loop execution: doer → checker → (retry or accept) ---
+    # Skip loop in test environments or when explicitly disabled
+    skip_loop = os.environ.get("SCOPE_SKIP_LOOP", "").lower() in ("1", "true", "yes")
+    if not skip_loop:
+        _run_loop(
+            session_id=session_id,
+            prompt=prompt,
+            checker=checker,
+            max_iterations=max_iterations,
+            checker_model=checker_model or model,
+            dangerously_skip_permissions=dangerously_skip_permissions,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Loop engine
+# ---------------------------------------------------------------------------
+
+
+def _run_loop(
+    session_id: str,
+    prompt: str,
+    checker: str,
+    max_iterations: int,
+    checker_model: str,
+    dangerously_skip_permissions: bool,
+) -> None:
+    """Execute the doer→checker loop.
+
+    Waits for the doer to complete, runs the checker, and either accepts
+    or retries with feedback up to max_iterations times.
+    """
+    scope_dir = ensure_scope_dir()
+    history: list[dict] = []
+    current_doer_id = session_id
+
+    for iteration in range(max_iterations):
+        # Wait for current doer to complete
+        _wait_for_sessions([current_doer_id])
+
+        # Read doer result
+        doer_result = _read_result(scope_dir, current_doer_id)
+
+        # Check if doer failed/aborted — no point running checker
+        session = load_session(current_doer_id)
+        if session and session.state in {"aborted", "failed", "exited"}:
+            click.echo(
+                f"Loop: doer session {current_doer_id} ended with state '{session.state}' "
+                f"at iteration {iteration}. Terminating loop.",
+                err=True,
+            )
+            break
+
+        # Run checker
+        verdict, feedback = _run_checker(
+            checker=checker,
+            doer_result=doer_result,
+            iteration=iteration,
+            history=history,
+            checker_model=checker_model,
+            dangerously_skip_permissions=dangerously_skip_permissions,
+        )
+
+        # Record history
+        history.append(
+            {
+                "iteration": iteration,
+                "doer_session": current_doer_id,
+                "verdict": verdict,
+                "feedback": feedback,
+            }
+        )
+
+        # Persist loop state
+        save_loop_state(
+            session_id=session_id,
+            checker=checker,
+            max_iterations=max_iterations,
+            current_iteration=iteration,
+            history=history,
+        )
+
+        if verdict == "accept":
+            click.echo(
+                f"Loop: checker accepted at iteration {iteration}.",
+                err=True,
+            )
+            return
+
+        if verdict == "terminate":
+            click.echo(
+                f"Loop: checker terminated at iteration {iteration}. "
+                f"Feedback: {feedback}",
+                err=True,
+            )
+            return
+
+        # verdict == "retry" — spawn next doer iteration with feedback
+        if iteration + 1 >= max_iterations:
+            click.echo(
+                f"Loop: max iterations ({max_iterations}) reached without acceptance.",
+                err=True,
+            )
+            return
+
+        # Build retry prompt with checker feedback
+        retry_prompt = (
+            f"{prompt}\n\n"
+            f"# Checker Feedback (iteration {iteration})\n\n"
+            f"The checker reviewed your previous output and requested a retry:\n\n"
+            f"{feedback}\n\n"
+            f"Please address this feedback and try again."
+        )
+
+        # Spawn next doer iteration by piping from previous
+        current_doer_id = _spawn_session(
+            prompt=retry_prompt,
+            pipe_from=current_doer_id,
+            dangerously_skip_permissions=dangerously_skip_permissions,
+            parent_session_id=session_id,
+        )
+
+
+def _read_result(scope_dir: Path, session_id: str) -> str:
+    """Read the result file for a completed session."""
+    result_file = scope_dir / "sessions" / session_id / "result"
+    if result_file.exists():
+        return result_file.read_text().strip()
+    return ""
+
+
+def _run_checker(
+    checker: str,
+    doer_result: str,
+    iteration: int,
+    history: list[dict],
+    checker_model: str,
+    dangerously_skip_permissions: bool,
+) -> tuple[str, str]:
+    """Run the checker and return (verdict, feedback).
+
+    Command checker: runs as subprocess, exit 0 = accept, non-zero = retry.
+    Agent checker (prefix "agent:"): spawns a tmux session to evaluate.
+
+    Returns:
+        Tuple of (verdict, feedback) where verdict is "accept", "retry", or "terminate".
+    """
+    if checker.startswith("agent:"):
+        return _run_agent_checker(
+            checker_prompt=checker[len("agent:") :].strip(),
+            doer_result=doer_result,
+            iteration=iteration,
+            history=history,
+            checker_model=checker_model,
+            dangerously_skip_permissions=dangerously_skip_permissions,
+        )
+    else:
+        return _run_command_checker(command=checker)
+
+
+def _run_command_checker(command: str) -> tuple[str, str]:
+    """Run a command checker as a subprocess.
+
+    Exit 0 = accept, non-zero = retry with stdout+stderr as feedback.
+    """
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 minute timeout
+            cwd=Path.cwd(),
+        )
+
+        if result.returncode == 0:
+            return ("accept", result.stdout.strip())
+        else:
+            feedback_parts = []
+            if result.stdout.strip():
+                feedback_parts.append(result.stdout.strip())
+            if result.stderr.strip():
+                feedback_parts.append(result.stderr.strip())
+            feedback = (
+                "\n".join(feedback_parts)
+                or f"Command exited with code {result.returncode}"
+            )
+            return ("retry", feedback)
+
+    except subprocess.TimeoutExpired:
+        return ("retry", "Checker command timed out after 300 seconds")
+    except OSError as e:
+        return ("terminate", f"Checker command failed to execute: {e}")
+
+
+def _run_agent_checker(
+    checker_prompt: str,
+    doer_result: str,
+    iteration: int,
+    history: list[dict],
+    checker_model: str,
+    dangerously_skip_permissions: bool,
+) -> tuple[str, str]:
+    """Run an agent checker as a tmux session.
+
+    Spawns a full scope session with the checker contract so it's
+    visible and steerable in tmux, then waits for it to complete.
+    """
+    contract = generate_checker_contract(
+        checker_prompt=checker_prompt,
+        doer_result=doer_result,
+        iteration=iteration,
+        history=history if history else None,
+    )
+
+    checker_id = _spawn_session(
+        prompt=contract,
+        model=checker_model,
+        dangerously_skip_permissions=dangerously_skip_permissions,
+    )
+
+    # Wait for checker session to finish
+    _wait_for_sessions([checker_id])
+
+    # Read checker result
+    scope_dir = ensure_scope_dir()
+    session = load_session(checker_id)
+    if session and session.state in {"aborted", "failed", "exited"}:
+        return (
+            "retry",
+            f"Checker session {checker_id} ended with state '{session.state}'",
+        )
+
+    response = _read_result(scope_dir, checker_id)
+    if not response:
+        return ("retry", f"Checker session {checker_id} produced no output")
+
+    return _parse_verdict(response)
+
+
+def _parse_verdict(response: str) -> tuple[str, str]:
+    """Parse a verdict from an agent checker's response.
+
+    Scans for ACCEPT, RETRY, or TERMINATE in the response.
+    The feedback is the full response text.
+
+    Returns:
+        Tuple of (verdict, feedback).
+    """
+    # Check for verdicts — scan from the end (most likely location)
+    # Priority: TERMINATE > ACCEPT > RETRY (TERMINATE is most specific)
+    lines_reversed = response.strip().split("\n")[::-1]
+
+    for line in lines_reversed:
+        line_upper = line.upper().strip()
+        if "TERMINATE" in line_upper:
+            return ("terminate", response)
+        if "ACCEPT" in line_upper:
+            return ("accept", response)
+        if "RETRY" in line_upper:
+            return ("retry", response)
+
+    # No verdict found — default to retry with the full response as feedback
+    return ("retry", response)
+
+
+def _spawn_session(
+    prompt: str,
+    model: str = "",
+    dangerously_skip_permissions: bool = False,
+    pipe_from: str = "",
+    parent_session_id: str = "",
+) -> str:
+    """Spawn a scope session as a tmux window.
+
+    Shared helper for spawning both retry doers and checker sessions
+    inside the loop. Each becomes a real tmux window you can introspect
+    and steer.
+
+    Returns the new session ID.
+    """
+    cmd = ["scope", "spawn", prompt]
+    if model:
+        cmd.extend(["--model", model])
+    if dangerously_skip_permissions:
+        cmd.append("--dangerously-skip-permissions")
+    if pipe_from:
+        cmd.extend(["--pipe", pipe_from])
+
+    # Inner sessions use a trivial checker — the outer loop is the
+    # real verification mechanism.
+    cmd.extend(["--checker", "true"])
+
+    env = os.environ.copy()
+    if parent_session_id:
+        env["SCOPE_SESSION_ID"] = parent_session_id
+    # Inner spawns must not themselves run a loop
+    env["SCOPE_SKIP_LOOP"] = "1"
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
+
+        if result.returncode != 0:
+            click.echo(
+                f"Loop: failed to spawn session: {result.stderr.strip()}",
+                err=True,
+            )
+            raise SystemExit(1)
+
+        return result.stdout.strip()
+
+    except subprocess.TimeoutExpired:
+        click.echo("Loop: session spawn timed out", err=True)
+        raise SystemExit(1)

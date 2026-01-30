@@ -7,7 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 from scope.cli import main
-from scope.commands.spawn import PENDING_TASK
+from scope.commands.spawn import PENDING_TASK, _parse_verdict
 from tests.helpers import tmux_cmd
 
 
@@ -41,7 +41,6 @@ def test_spawn_no_args(runner):
     """Test spawn without prompt argument shows error."""
     result = runner.invoke(main, ["spawn"])
     assert result.exit_code != 0
-    assert "Missing argument" in result.output
 
 
 def test_spawn_help(runner):
@@ -51,9 +50,18 @@ def test_spawn_help(runner):
     assert "Spawn a new scope session" in result.output
 
 
+def test_spawn_missing_checker(runner, mock_scope_base, cleanup_scope_windows):
+    """Test spawn without --checker fails with clear error."""
+    result = runner.invoke(main, ["spawn", "Write tests for auth module"])
+    assert result.exit_code != 0
+    assert "Missing option" in result.output or "required" in result.output.lower()
+
+
 def test_spawn_creates_session(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn creates session files and tmux window."""
-    result = runner.invoke(main, ["spawn", "Write tests for auth module"])
+    result = runner.invoke(
+        main, ["spawn", "Write tests for auth module", "--checker", "true"]
+    )
 
     assert result.exit_code == 0
     session_id = result.output.strip()
@@ -70,14 +78,17 @@ def test_spawn_creates_session(runner, mock_scope_base, cleanup_scope_windows):
     assert "# Task" in contract
     assert "Write tests for auth module" in contract
 
+    # Loop state should exist
+    assert (session_dir / "loop_state.json").exists()
+
     # Verify tmux window exists in the scope session
     assert window_exists("w0")
 
 
 def test_spawn_sequential_ids(runner, mock_scope_base, cleanup_scope_windows):
     """Test multiple spawns get sequential IDs."""
-    result1 = runner.invoke(main, ["spawn", "Task 1"])
-    result2 = runner.invoke(main, ["spawn", "Task 2"])
+    result1 = runner.invoke(main, ["spawn", "Task 1", "--checker", "true"])
+    result2 = runner.invoke(main, ["spawn", "Task 2", "--checker", "true"])
 
     assert result1.output.strip() == "0"
     assert result2.output.strip() == "1"
@@ -90,7 +101,9 @@ def test_spawn_with_parent(runner, mock_scope_base, monkeypatch, cleanup_scope_w
     # Create parent directory first
     (mock_scope_base / "sessions" / "0").mkdir(parents=True)
 
-    result = runner.invoke(main, ["spawn", "Child task prompt"])
+    result = runner.invoke(
+        main, ["spawn", "Child task prompt", "--checker", "true"]
+    )
 
     assert result.exit_code == 0
     session_id = result.output.strip()
@@ -103,3 +116,51 @@ def test_spawn_with_parent(runner, mock_scope_base, monkeypatch, cleanup_scope_w
     contract = (session_dir / "contract.md").read_text()
     assert "# Task" in contract
     assert "Child task prompt" in contract
+
+
+# --- Verdict parsing tests ---
+
+
+def test_parse_verdict_accept():
+    """Test parsing ACCEPT verdict."""
+    verdict, feedback = _parse_verdict("The code looks good.\n\nACCEPT")
+    assert verdict == "accept"
+    assert "code looks good" in feedback
+
+
+def test_parse_verdict_retry():
+    """Test parsing RETRY verdict."""
+    verdict, feedback = _parse_verdict("Missing error handling.\n\nRETRY")
+    assert verdict == "retry"
+    assert "Missing error handling" in feedback
+
+
+def test_parse_verdict_terminate():
+    """Test parsing TERMINATE verdict."""
+    verdict, feedback = _parse_verdict("The task is impossible.\n\nTERMINATE")
+    assert verdict == "terminate"
+
+
+def test_parse_verdict_case_insensitive():
+    """Test verdict parsing is case insensitive."""
+    verdict, _ = _parse_verdict("Looks great!\n\naccept")
+    assert verdict == "accept"
+
+
+def test_parse_verdict_no_verdict_defaults_retry():
+    """Test that missing verdict defaults to retry."""
+    verdict, feedback = _parse_verdict("Some feedback without a verdict")
+    assert verdict == "retry"
+    assert "Some feedback without a verdict" in feedback
+
+
+def test_parse_verdict_terminate_priority():
+    """Test TERMINATE takes priority when scanning from end."""
+    verdict, _ = _parse_verdict("ACCEPT this but also TERMINATE")
+    assert verdict == "terminate"
+
+
+def test_parse_verdict_last_line_wins():
+    """Test the last verdict line wins."""
+    verdict, _ = _parse_verdict("RETRY\nACCEPT")
+    assert verdict == "accept"

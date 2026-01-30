@@ -114,3 +114,60 @@ def generate_contract(
         )
 
     return "\n\n".join(sections)
+
+
+def generate_checker_contract(
+    checker_prompt: str,
+    doer_result: str,
+    iteration: int,
+    history: list[dict] | None = None,
+) -> str:
+    """Generate a checker contract for verifying doer output.
+
+    The checker sees the doer's result (not its reasoning/trajectory),
+    iteration history, and is asked to render a verdict.
+
+    Args:
+        checker_prompt: The checker's verification prompt.
+        doer_result: The doer's final output text.
+        iteration: Current iteration number (0-indexed).
+        history: Prior iteration records with keys: iteration, verdict, feedback.
+
+    Returns:
+        Markdown string containing the checker contract.
+    """
+    sections = []
+
+    # Role
+    sections.append(
+        "# Role\n\n"
+        "You are a **checker**. Your job is to verify the doer's output and render a verdict.\n\n"
+        "You MUST end your response with exactly one of these verdicts on its own line:\n"
+        "- `ACCEPT` — the output meets the criteria\n"
+        "- `RETRY` — the output needs improvement (provide specific feedback)\n"
+        "- `TERMINATE` — the task is fundamentally broken and retrying won't help"
+    )
+
+    # Checker criteria
+    sections.append(f"# Checker Criteria\n\n{checker_prompt}")
+
+    # Doer output
+    sections.append(f"# Doer Output\n\n{doer_result}")
+
+    # Iteration context
+    sections.append(f"# Iteration\n\nThis is iteration {iteration}.")
+
+    # History of prior iterations
+    if history:
+        history_lines = []
+        for entry in history:
+            verdict = entry.get("verdict", "unknown").upper()
+            feedback = entry.get("feedback", "")
+            line = f"- Iteration {entry.get('iteration', '?')}: **{verdict}**"
+            if feedback:
+                line += f" — {feedback}"
+            history_lines.append(line)
+        history_body = "\n".join(history_lines)
+        sections.append(f"# Prior Iterations\n\n{history_body}")
+
+    return "\n\n".join(sections)

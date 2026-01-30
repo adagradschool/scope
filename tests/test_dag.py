@@ -279,18 +279,18 @@ def _debug_spawn_result(result, label="SPAWN"):
 def test_spawn_after_creates_depends_on_file(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn --after creates depends_on file with correct IDs."""
     # First create a dependency session
-    result1 = runner.invoke(main, ["spawn", "--id", "dep1", "First task"])
+    result1 = runner.invoke(main, ["spawn", "--id", "dep1", "--checker", "true", "First task"])
     _debug_spawn_result(result1, "SPAWN dep1")
     assert result1.exit_code == 0
     dep1_id = result1.output.strip()
 
     # Create second dependency
-    result2 = runner.invoke(main, ["spawn", "--id", "dep2", "Second task"])
+    result2 = runner.invoke(main, ["spawn", "--id", "dep2", "--checker", "true", "Second task"])
     assert result2.exit_code == 0
     dep2_id = result2.output.strip()
 
     # Create session with dependencies
-    result3 = runner.invoke(main, ["spawn", "--after", "dep1,dep2", "Dependent task"])
+    result3 = runner.invoke(main, ["spawn", "--after", "dep1,dep2", "--checker", "true", "Dependent task"])
     assert result3.exit_code == 0
     session_id = result3.output.strip()
 
@@ -305,12 +305,12 @@ def test_spawn_after_creates_depends_on_file(runner, mock_scope_base, cleanup_sc
 def test_spawn_after_by_alias(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn --after works with aliases."""
     # Create dependency with alias
-    result1 = runner.invoke(main, ["spawn", "--id", "research", "Research task"])
+    result1 = runner.invoke(main, ["spawn", "--id", "research", "--checker", "true", "Research task"])
     assert result1.exit_code == 0
     dep_id = result1.output.strip()
 
     # Create dependent session using alias
-    result2 = runner.invoke(main, ["spawn", "--after", "research", "Implementation task"])
+    result2 = runner.invoke(main, ["spawn", "--after", "research", "--checker", "true", "Implementation task"])
     assert result2.exit_code == 0
     session_id = result2.output.strip()
 
@@ -323,12 +323,12 @@ def test_spawn_after_by_alias(runner, mock_scope_base, cleanup_scope_windows):
 def test_spawn_after_by_numeric_id(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn --after works with numeric IDs."""
     # Create dependency
-    result1 = runner.invoke(main, ["spawn", "First task"])
+    result1 = runner.invoke(main, ["spawn", "--checker", "true", "First task"])
     assert result1.exit_code == 0
     dep_id = result1.output.strip()
 
     # Create dependent session using numeric ID
-    result2 = runner.invoke(main, ["spawn", "--after", dep_id, "Second task"])
+    result2 = runner.invoke(main, ["spawn", "--after", dep_id, "--checker", "true", "Second task"])
     assert result2.exit_code == 0
     session_id = result2.output.strip()
 
@@ -340,7 +340,7 @@ def test_spawn_after_by_numeric_id(runner, mock_scope_base, cleanup_scope_window
 
 def test_spawn_after_dependency_not_found(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn --after errors when dependency doesn't exist."""
-    result = runner.invoke(main, ["spawn", "--after", "nonexistent", "Some task"])
+    result = runner.invoke(main, ["spawn", "--after", "nonexistent", "--checker", "true", "Some task"])
     assert result.exit_code == 1
     assert "dependency 'nonexistent' not found" in result.output
 
@@ -348,11 +348,11 @@ def test_spawn_after_dependency_not_found(runner, mock_scope_base, cleanup_scope
 def test_spawn_after_cycle_rejected(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn --after rejects cycles."""
     # Create A
-    result1 = runner.invoke(main, ["spawn", "--id", "A", "Task A"])
+    result1 = runner.invoke(main, ["spawn", "--id", "A", "--checker", "true", "Task A"])
     assert result1.exit_code == 0
 
     # Create B that depends on A
-    result2 = runner.invoke(main, ["spawn", "--id", "B", "--after", "A", "Task B"])
+    result2 = runner.invoke(main, ["spawn", "--id", "B", "--after", "A", "--checker", "true", "Task B"])
     assert result2.exit_code == 0
 
     # Manually update A to depend on B (simulating a cycle setup)
@@ -366,7 +366,7 @@ def test_spawn_after_cycle_rejected(runner, mock_scope_base, cleanup_scope_windo
     # Let's create a scenario where we have a chain and try to close it
 
     # Create chain: A (done), B->A (done), C->B (attempt to also depend on something that depends on C)
-    result3 = runner.invoke(main, ["spawn", "--id", "C", "--after", "B", "Task C"])
+    result3 = runner.invoke(main, ["spawn", "--id", "C", "--after", "B", "--checker", "true", "Task C"])
     assert result3.exit_code == 0
 
     # Now if we try to create D that depends on C, and C somehow depended on D, that would be a cycle
@@ -379,17 +379,17 @@ def test_spawn_after_cycle_rejected(runner, mock_scope_base, cleanup_scope_windo
 def test_spawn_after_mixed_aliases_and_ids(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn --after works with mixed aliases and numeric IDs."""
     # Create first dep with alias
-    result1 = runner.invoke(main, ["spawn", "--id", "research", "Research task"])
+    result1 = runner.invoke(main, ["spawn", "--id", "research", "--checker", "true", "Research task"])
     assert result1.exit_code == 0
     research_id = result1.output.strip()
 
     # Create second dep without alias
-    result2 = runner.invoke(main, ["spawn", "Audit task"])
+    result2 = runner.invoke(main, ["spawn", "--checker", "true", "Audit task"])
     assert result2.exit_code == 0
     audit_id = result2.output.strip()
 
     # Create dependent using mixed references
-    result3 = runner.invoke(main, ["spawn", "--after", f"research,{audit_id}", "Implementation"])
+    result3 = runner.invoke(main, ["spawn", "--after", f"research,{audit_id}", "--checker", "true", "Implementation"])
     assert result3.exit_code == 0
     session_id = result3.output.strip()
 

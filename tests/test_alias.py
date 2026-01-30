@@ -203,7 +203,7 @@ def test_resolve_id_prefers_numeric_id_over_alias(mock_scope_base):
 
 def test_spawn_with_id_creates_alias_file(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn --id creates alias file."""
-    result = runner.invoke(main, ["spawn", "--id", "foo", "Test task"])
+    result = runner.invoke(main, ["spawn", "--id", "foo", "--checker", "true", "Test task"])
 
     # Debug output for CI failures
     if result.exit_code != 0:
@@ -228,11 +228,11 @@ def test_spawn_with_id_creates_alias_file(runner, mock_scope_base, cleanup_scope
 def test_spawn_duplicate_alias_rejected(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn rejects duplicate alias."""
     # First spawn with alias
-    result1 = runner.invoke(main, ["spawn", "--id", "foo", "First task"])
+    result1 = runner.invoke(main, ["spawn", "--id", "foo", "--checker", "true", "First task"])
     assert result1.exit_code == 0
 
     # Second spawn with same alias should fail
-    result2 = runner.invoke(main, ["spawn", "--id", "foo", "Second task"])
+    result2 = runner.invoke(main, ["spawn", "--id", "foo", "--checker", "true", "Second task"])
     assert result2.exit_code == 1
     assert "alias 'foo' is already used by session" in result2.output
 

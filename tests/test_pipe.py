@@ -187,7 +187,7 @@ def test_spawn_pipe_help(runner):
 
 def test_spawn_pipe_not_found(runner, mock_scope_base):
     """Test --pipe with non-existent session shows error."""
-    result = runner.invoke(main, ["spawn", "--pipe", "999", "Do work"])
+    result = runner.invoke(main, ["spawn", "--pipe", "999", "--checker", "true", "Do work"])
 
     assert result.exit_code == 1
     assert "piped session '999' not found" in result.output
@@ -211,7 +211,7 @@ def test_spawn_pipe_done_session(runner, mock_scope_base, cleanup_scope_windows)
         "Found 3 auth libraries: jwt, oauth2, sessions."
     )
 
-    result = runner.invoke(main, ["spawn", "--pipe", "0", "Use the research results"])
+    result = runner.invoke(main, ["spawn", "--pipe", "0", "--checker", "true", "Use the research results"])
 
     assert result.exit_code == 0
     session_id = result.output.strip()
@@ -249,7 +249,7 @@ def test_spawn_pipe_multiple_sessions(runner, mock_scope_base, cleanup_scope_win
     _init_next_id(mock_scope_base, 2)  # Next spawn gets ID "2"
 
     result = runner.invoke(
-        main, ["spawn", "--pipe", "0,1", "Combine the findings"]
+        main, ["spawn", "--pipe", "0,1", "--checker", "true", "Combine the findings"]
     )
 
     assert result.exit_code == 0
@@ -277,7 +277,7 @@ def test_spawn_pipe_implies_after(runner, mock_scope_base, cleanup_scope_windows
     _init_next_id(mock_scope_base, 1)
     (mock_scope_base / "sessions" / "0" / "result").write_text("Parent result")
 
-    result = runner.invoke(main, ["spawn", "--pipe", "0", "Child task"])
+    result = runner.invoke(main, ["spawn", "--pipe", "0", "--checker", "true", "Child task"])
 
     assert result.exit_code == 0
     session_id = result.output.strip()
@@ -307,7 +307,7 @@ def test_spawn_pipe_with_after(runner, mock_scope_base, cleanup_scope_windows):
     # --after 0 and --pipe 0 should not duplicate 0 in depends_on
     # --after 1 adds 1 as additional dependency
     result = runner.invoke(
-        main, ["spawn", "--after", "0,1", "--pipe", "0", "Do work"]
+        main, ["spawn", "--after", "0,1", "--pipe", "0", "--checker", "true", "Do work"]
     )
 
     assert result.exit_code == 0
@@ -337,7 +337,7 @@ def test_spawn_pipe_no_result_still_spawns(runner, mock_scope_base, cleanup_scop
     _init_next_id(mock_scope_base, 1)
     # No result file
 
-    result = runner.invoke(main, ["spawn", "--pipe", "0", "Child task"])
+    result = runner.invoke(main, ["spawn", "--pipe", "0", "--checker", "true", "Child task"])
 
     assert result.exit_code == 0
     session_id = result.output.strip()
@@ -364,7 +364,7 @@ def test_spawn_pipe_resolves_alias(runner, mock_scope_base, cleanup_scope_window
     _init_next_id(mock_scope_base, 1)
     (mock_scope_base / "sessions" / "0" / "result").write_text("Research done.")
 
-    result = runner.invoke(main, ["spawn", "--pipe", "research", "Use results"])
+    result = runner.invoke(main, ["spawn", "--pipe", "research", "--checker", "true", "Use results"])
 
     assert result.exit_code == 0
     session_id = result.output.strip()
