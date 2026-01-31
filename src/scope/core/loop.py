@@ -1,9 +1,12 @@
 """Loop engine for scope.
 
 Extracted from spawn.py — the doer→checker loop as a reusable module.
+Rubric-driven verification: all checkers are internally rubrics.
 """
 
+import hashlib
 import os
+import re
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -24,6 +27,140 @@ from scope.core.tmux import send_keys
 TERMINAL_STATES = {"done", "aborted", "failed", "exited"}
 CONTRACT_CHUNK_SIZE = 2000
 PENDING_TASK = "(pending...)"
+
+
+@dataclass
+class Rubric:
+    """Parsed rubric with optional sections."""
+
+    title: str = ""
+    gates: list[str] = field(default_factory=list)
+    criteria: list[str] = field(default_factory=list)
+    nice_to_have: list[str] = field(default_factory=list)
+    notes: str = ""
+
+    @property
+    def has_gates(self) -> bool:
+        return bool(self.gates)
+
+    @property
+    def has_criteria(self) -> bool:
+        return bool(self.criteria) or bool(self.nice_to_have)
+
+
+def parse_rubric(text: str) -> Rubric:
+    """Parse a rubric markdown file into structured sections.
+
+    Supports these sections:
+    - ## Gates — shell commands (extracted from backtick-wrapped list items)
+    - ## Criteria — must-have natural language criteria
+    - ## Nice to Have — advisory criteria
+    - ## Notes — background context (free-form text)
+
+    Args:
+        text: Rubric markdown content.
+
+    Returns:
+        Parsed Rubric dataclass.
+    """
+    rubric = Rubric()
+
+    # Extract title from # heading (not ##)
+    title_match = re.match(r"^#\s+(.+)$", text.strip(), re.MULTILINE)
+    if title_match:
+        rubric.title = title_match.group(1).strip()
+
+    # Split into sections by ## headings
+    section_pattern = re.compile(r"^##\s+(.+)$", re.MULTILINE)
+    sections: list[tuple[str, str]] = []
+    matches = list(section_pattern.finditer(text))
+
+    for i, match in enumerate(matches):
+        heading = match.group(1).strip().lower()
+        start = match.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        body = text[start:end].strip()
+        sections.append((heading, body))
+
+    for heading, body in sections:
+        if heading == "gates":
+            # Extract commands from backtick-wrapped list items: - `command`
+            for line in body.split("\n"):
+                line = line.strip()
+                m = re.match(r"^-\s+`(.+?)`", line)
+                if m:
+                    rubric.gates.append(m.group(1))
+        elif heading == "criteria":
+            for line in body.split("\n"):
+                line = line.strip()
+                m = re.match(r"^-\s+(.+)$", line)
+                if m:
+                    rubric.criteria.append(m.group(1))
+        elif heading in ("nice to have", "nice-to-have"):
+            for line in body.split("\n"):
+                line = line.strip()
+                m = re.match(r"^-\s+(.+)$", line)
+                if m:
+                    rubric.nice_to_have.append(m.group(1))
+        elif heading == "notes":
+            rubric.notes = body
+
+    return rubric
+
+
+def detect_checker_type(checker: str) -> str:
+    """Detect the type of checker specification.
+
+    Returns:
+        "file" — path to a rubric file
+        "agent" — agent: prefixed prompt
+        "command" — shell command
+    """
+    if checker.startswith("agent:"):
+        return "agent"
+    # Check if it looks like a file path (exists or has .md extension)
+    if Path(checker).suffix in (".md", ".markdown"):
+        return "file"
+    if Path(checker).is_file():
+        return "file"
+    return "command"
+
+
+def sugar_to_rubric(checker: str) -> str:
+    """Convert checker sugar to rubric markdown.
+
+    Args:
+        checker: A shell command or "agent: ..." string.
+
+    Returns:
+        Rubric markdown content.
+    """
+    checker_type = detect_checker_type(checker)
+
+    if checker_type == "agent":
+        prompt = checker[len("agent:"):].strip()
+        return f"## Criteria\n- {prompt}\n"
+    elif checker_type == "command":
+        return f"## Gates\n- `{checker}`\n"
+    else:
+        # File path — should be read directly, not converted
+        raise ValueError(f"Cannot convert file path to rubric: {checker}")
+
+
+def rubric_hash(content: str) -> str:
+    """Compute a short hash of rubric content for change tracking."""
+    return hashlib.sha256(content.encode()).hexdigest()[:8]
+
+
+def load_rubric(rubric_path: str) -> tuple[Rubric, str, str]:
+    """Load and parse a rubric file.
+
+    Returns:
+        Tuple of (parsed Rubric, raw content, content hash).
+    """
+    content = Path(rubric_path).read_text()
+    parsed = parse_rubric(content)
+    return (parsed, content, rubric_hash(content))
 
 
 @dataclass
@@ -101,11 +238,24 @@ def parse_verdict(response: str) -> tuple[str, str]:
     return ("retry", response)
 
 
+def iter_session_id(loop_id: str, iteration: int, role: str) -> str:
+    """Build an iteration-indexed session ID for a loop child.
+
+    Examples:
+        >>> iter_session_id("2.1", 0, "check")
+        '2.1-0-check'
+        >>> iter_session_id("2.1", 1, "do")
+        '2.1-1-do'
+    """
+    return f"{loop_id}-{iteration}-{role}"
+
+
 def spawn_session(
     prompt: str,
     model: str = "",
     dangerously_skip_permissions: bool = False,
     parent_session_id: str = "",
+    session_id: str = "",
 ) -> str:
     """Spawn a scope session as a tmux window.
 
@@ -120,6 +270,8 @@ def spawn_session(
         cmd.extend(["--model", model])
     if dangerously_skip_permissions:
         cmd.append("--dangerously-skip-permissions")
+    if session_id:
+        cmd.extend(["--session-id", session_id])
     # Inner sessions use a trivial checker — the outer loop is the
     # real verification mechanism.
     cmd.extend(["--checker", "true"])
@@ -224,11 +376,13 @@ def run_agent_checker(
         history=history if history else None,
     )
 
+    checker_id_str = iter_session_id(parent_session_id, iteration, "check") if parent_session_id else ""
     checker_id = spawn_session(
         prompt=contract,
         model=checker_model,
         dangerously_skip_permissions=dangerously_skip_permissions,
         parent_session_id=parent_session_id,
+        session_id=checker_id_str,
     )
 
     # Wait for checker session to finish
@@ -252,6 +406,207 @@ def run_agent_checker(
     return (verdict, feedback, checker_id)
 
 
+def run_gates(gates: list[str]) -> list[dict]:
+    """Run all gate commands and return structured results.
+
+    Each gate is run as a subprocess. Results include command, verdict, and output.
+
+    Args:
+        gates: List of shell commands to run.
+
+    Returns:
+        List of dicts with keys: command, verdict ("pass"/"fail"/"error"), output.
+    """
+    results = []
+    for command in gates:
+        verdict, output = run_command_checker(command=command)
+        # Normalize: run_command_checker returns "accept"/"retry"/"terminate"
+        gate_verdict = "pass" if verdict == "accept" else "fail"
+        results.append({
+            "command": command,
+            "verdict": gate_verdict,
+            "output": output,
+        })
+    return results
+
+
+def run_rubric_checker(
+    rubric: Rubric,
+    doer_result: str,
+    iteration: int,
+    history: list[dict],
+    checker_model: str,
+    dangerously_skip_permissions: bool,
+    parent_session_id: str = "",
+) -> tuple[str, str, str, list[dict], str]:
+    """Run composite rubric-based verification.
+
+    1. Run all gates (shell commands)
+    2. If criteria exist, run agent checker with gate results as context
+    3. Compute composite verdict
+
+    Returns:
+        Tuple of (verdict, feedback, checker_session_id, gate_results, criteria_summary).
+    """
+    gate_results: list[dict] = []
+    criteria_summary = ""
+    checker_session_id = ""
+
+    # Step 1: Run gates
+    if rubric.has_gates:
+        gate_results = run_gates(rubric.gates)
+
+    # Step 2: Run agent checker if criteria exist
+    if rubric.has_criteria:
+        contract = generate_checker_contract(
+            checker_prompt="",  # Not used in rubric mode
+            doer_result=doer_result,
+            iteration=iteration,
+            history=history if history else None,
+            gate_results=gate_results if gate_results else None,
+            criteria=rubric.criteria if rubric.criteria else None,
+            nice_to_have=rubric.nice_to_have if rubric.nice_to_have else None,
+            notes=rubric.notes,
+        )
+
+        checker_id_str = iter_session_id(parent_session_id, iteration, "check") if parent_session_id else ""
+        checker_session_id = spawn_session(
+            prompt=contract,
+            model=checker_model,
+            dangerously_skip_permissions=dangerously_skip_permissions,
+            parent_session_id=parent_session_id,
+            session_id=checker_id_str,
+        )
+
+        wait_for_sessions([checker_session_id])
+
+        scope_dir = ensure_scope_dir()
+        session = load_session(checker_session_id)
+        if session and session.state in {"aborted", "failed", "exited"}:
+            return (
+                "retry",
+                f"Checker session {checker_session_id} ended with state '{session.state}'",
+                checker_session_id,
+                gate_results,
+                "",
+            )
+
+        response = read_result(scope_dir, checker_session_id)
+        if not response:
+            return (
+                "retry",
+                f"Checker session {checker_session_id} produced no output",
+                checker_session_id,
+                gate_results,
+                "",
+            )
+
+        # Parse per-criterion results from agent response
+        criteria_summary = _parse_criteria_summary(
+            response, len(rubric.criteria), len(rubric.nice_to_have)
+        )
+
+        # Step 3: Composite verdict
+        gates_pass = all(g["verdict"] == "pass" for g in gate_results)
+        agent_verdict, agent_feedback = parse_verdict(response)
+
+        if agent_verdict == "terminate":
+            return ("terminate", agent_feedback, checker_session_id, gate_results, criteria_summary)
+
+        if not gates_pass:
+            # Build feedback from failed gates + agent feedback
+            failed_gates = [g for g in gate_results if g["verdict"] != "pass"]
+            gate_feedback = "Failed gates:\n" + "\n".join(
+                f"- `{g['command']}`: {g['output'][:500]}" for g in failed_gates
+            )
+            combined = f"{gate_feedback}\n\nAgent feedback:\n{agent_feedback}"
+            return ("retry", combined, checker_session_id, gate_results, criteria_summary)
+
+        if agent_verdict == "accept":
+            return ("accept", agent_feedback, checker_session_id, gate_results, criteria_summary)
+        else:
+            return ("retry", agent_feedback, checker_session_id, gate_results, criteria_summary)
+
+    else:
+        # Gates-only rubric: no agent checker needed
+        if not gate_results:
+            # Empty rubric — accept by default
+            return ("accept", "Empty rubric — no checks to run", "", [], "")
+
+        gates_pass = all(g["verdict"] == "pass" for g in gate_results)
+        if gates_pass:
+            gate_summary = "\n".join(
+                f"- `{g['command']}`: PASS" for g in gate_results
+            )
+            return ("accept", gate_summary, "", gate_results, "")
+        else:
+            failed_gates = [g for g in gate_results if g["verdict"] != "pass"]
+            gate_feedback = "\n".join(
+                f"- `{g['command']}`: FAIL\n{g['output'][:500]}" for g in failed_gates
+            )
+            return ("retry", gate_feedback, "", gate_results, "")
+
+
+def _parse_criteria_summary(
+    response: str, num_criteria: int, num_nice: int
+) -> str:
+    """Parse per-criterion PASS/FAIL counts from agent response.
+
+    Best-effort parsing. Falls back to empty string if parsing fails.
+
+    Returns:
+        Summary string like "2/3 must  1/2 nice" or "".
+    """
+    # Count PASS/FAIL mentions in the response
+    lines = response.split("\n")
+    must_pass = 0
+    nice_pass = 0
+
+    # Simple heuristic: look for numbered items with PASS/FAIL
+    in_must = False
+    in_nice = False
+    must_count = 0
+    nice_count = 0
+
+    for line in lines:
+        line_upper = line.upper().strip()
+        if "MUST-HAVE" in line_upper or "MUST HAVE" in line_upper:
+            in_must = True
+            in_nice = False
+            continue
+        if "NICE-TO-HAVE" in line_upper or "NICE TO HAVE" in line_upper:
+            in_nice = True
+            in_must = False
+            continue
+        if line_upper.startswith("#"):
+            in_must = False
+            in_nice = False
+            continue
+
+        # Check for numbered items with PASS/FAIL
+        if re.match(r"^\d+\.", line.strip()):
+            if in_must:
+                must_count += 1
+                if "PASS" in line_upper:
+                    must_pass += 1
+            elif in_nice:
+                nice_count += 1
+                if "PASS" in line_upper:
+                    nice_pass += 1
+
+    # Use parsed counts, fall back to provided counts
+    total_must = must_count if must_count > 0 else num_criteria
+    total_nice = nice_count if nice_count > 0 else num_nice
+
+    parts = []
+    if total_must > 0:
+        parts.append(f"{must_pass}/{total_must} must")
+    if total_nice > 0:
+        parts.append(f"{nice_pass}/{total_nice} nice")
+
+    return "  ".join(parts)
+
+
 def run_checker(
     checker: str,
     doer_result: str,
@@ -260,18 +615,32 @@ def run_checker(
     checker_model: str,
     dangerously_skip_permissions: bool,
     parent_session_id: str = "",
-) -> tuple[str, str, str]:
-    """Run the checker and return (verdict, feedback, checker_session_id).
+    rubric_path: str = "",
+) -> tuple[str, str, str, list[dict], str]:
+    """Run the checker and return (verdict, feedback, checker_session_id, gate_results, criteria_summary).
 
-    Command checker: runs as subprocess, exit 0 = accept, non-zero = retry.
-    Agent checker (prefix "agent:"): spawns a tmux session to evaluate.
+    When rubric_path is set, loads and uses rubric-driven verification.
+    Otherwise falls back to legacy command/agent checker.
 
     Returns:
-        Tuple of (verdict, feedback, checker_session_id).
-        checker_session_id is empty for command checkers.
+        Tuple of (verdict, feedback, checker_session_id, gate_results, criteria_summary).
+        gate_results and criteria_summary are empty for legacy checkers.
     """
+    if rubric_path:
+        rubric, _content, _hash = load_rubric(rubric_path)
+        return run_rubric_checker(
+            rubric=rubric,
+            doer_result=doer_result,
+            iteration=iteration,
+            history=history,
+            checker_model=checker_model,
+            dangerously_skip_permissions=dangerously_skip_permissions,
+            parent_session_id=parent_session_id,
+        )
+
+    # Legacy path
     if checker.startswith("agent:"):
-        return run_agent_checker(
+        verdict, feedback, cid = run_agent_checker(
             checker_prompt=checker[len("agent:") :].strip(),
             doer_result=doer_result,
             iteration=iteration,
@@ -280,9 +649,10 @@ def run_checker(
             dangerously_skip_permissions=dangerously_skip_permissions,
             parent_session_id=parent_session_id,
         )
+        return (verdict, feedback, cid, [], "")
     else:
         verdict, feedback = run_command_checker(command=checker)
-        return (verdict, feedback, "")
+        return (verdict, feedback, "", [], "")
 
 
 def run_loop(
@@ -292,11 +662,15 @@ def run_loop(
     max_iterations: int,
     checker_model: str,
     dangerously_skip_permissions: bool,
+    rubric_path: str = "",
 ) -> LoopResult:
     """Execute the doer->checker loop.
 
     Waits for the doer to complete, runs the checker, and either accepts
     or retries with feedback up to max_iterations times.
+
+    When rubric_path is set, the rubric file is re-read each iteration
+    (hot-reload for mid-loop editing).
 
     Returns a LoopResult with the final verdict and history.
     """
@@ -357,8 +731,13 @@ def run_loop(
             fallback=doer_result[:300] if doer_result else task_name,
         )
 
+        # Compute rubric hash for this iteration (hot-reload: re-read each time)
+        iter_rubric_hash = ""
+        if rubric_path and Path(rubric_path).exists():
+            _rubric, _content, iter_rubric_hash = load_rubric(rubric_path)
+
         # Run checker with summarized result
-        verdict, feedback, checker_session_id = run_checker(
+        verdict, feedback, checker_session_id, gate_results, criteria_summary = run_checker(
             checker=checker,
             doer_result=doer_summary,
             iteration=iteration,
@@ -366,6 +745,7 @@ def run_loop(
             checker_model=checker_model,
             dangerously_skip_permissions=dangerously_skip_permissions,
             parent_session_id=session_id,
+            rubric_path=rubric_path,
         )
 
         # Record history
@@ -377,6 +757,12 @@ def run_loop(
         }
         if checker_session_id:
             entry["checker_session"] = checker_session_id
+        if gate_results:
+            entry["gates"] = gate_results
+        if criteria_summary:
+            entry["criteria_summary"] = criteria_summary
+        if iter_rubric_hash:
+            entry["rubric_hash"] = iter_rubric_hash
         history.append(entry)
 
         # Persist loop state
@@ -386,6 +772,7 @@ def run_loop(
             max_iterations=max_iterations,
             current_iteration=iteration,
             history=history,
+            rubric_path=rubric_path,
         )
 
         if verdict == "accept":
@@ -441,10 +828,12 @@ def run_loop(
         )
 
         # Spawn next doer iteration (summary replaces full result pipe)
+        new_id = iter_session_id(session_id, iteration + 1, "do")
         current_doer_id = spawn_session(
             prompt=retry_prompt,
             dangerously_skip_permissions=dangerously_skip_permissions,
             parent_session_id=session_id,
+            session_id=new_id,
         )
 
     # Should not normally reach here, but safety net
@@ -465,6 +854,7 @@ def spawn_and_run(
     checker_model: str = "",
     model: str = "",
     dangerously_skip_permissions: bool = False,
+    rubric_path: str = "",
 ) -> LoopResult:
     """Combine session creation + contract sending + loop execution.
 
@@ -485,4 +875,5 @@ def spawn_and_run(
         max_iterations=max_iterations,
         checker_model=checker_model or model,
         dangerously_skip_permissions=dangerously_skip_permissions,
+        rubric_path=rubric_path,
     )
