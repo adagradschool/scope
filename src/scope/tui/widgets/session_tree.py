@@ -225,7 +225,11 @@ def _build_tree(
                     )
                     # For command-only checkers, show check row even without a checker session
                     iter0_history = history_by_iter.get(0)
-                    iter0_summary = _check_summary_from_history(iter0_history) if iter0_history else ""
+                    iter0_summary = (
+                        _check_summary_from_history(iter0_history)
+                        if iter0_history
+                        else ""
+                    )
                     if iter0_checker:
                         result.append(
                             TreeNode(
@@ -274,7 +278,11 @@ def _build_tree(
                         cs_id = checker_by_iter.get(iteration_num)
                         checker_session = session_by_id.get(cs_id) if cs_id else None
                         iter_history = history_by_iter.get(iteration_num)
-                        iter_summary = _check_summary_from_history(iter_history) if iter_history else ""
+                        iter_summary = (
+                            _check_summary_from_history(iter_history)
+                            if iter_history
+                            else ""
+                        )
                         if checker_session:
                             result.append(
                                 TreeNode(

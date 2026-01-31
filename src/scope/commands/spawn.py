@@ -88,7 +88,7 @@ def _wait_for_task_update(task_path: Path, timeout: float) -> bool:
     "checker",
     required=True,
     help="REQUIRED. Rubric file, command, or agent prompt for verification. "
-    'Rubric file: --checker rubric.md (primary path). '
+    "Rubric file: --checker rubric.md (primary path). "
     'Shell command sugar: --checker "pytest tests/" (becomes gates-only rubric). '
     'Agent prompt sugar: --checker "agent: Review for correctness" (becomes criteria-only rubric). '
     "Rubric is always materialized to the session directory for mid-loop editing.",

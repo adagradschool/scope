@@ -216,20 +216,15 @@ def _generate_rubric_checker_contract(
 
     # Must-have criteria
     if criteria:
-        numbered = "\n".join(
-            f"{i + 1}. {c}" for i, c in enumerate(criteria)
-        )
+        numbered = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(criteria))
         sections.append(
             "# Must-Have Criteria\n\n"
-            "For each, state PASS or FAIL with a brief explanation.\n\n"
-            + numbered
+            "For each, state PASS or FAIL with a brief explanation.\n\n" + numbered
         )
 
     # Nice-to-have criteria
     if nice_to_have:
-        numbered = "\n".join(
-            f"{i + 1}. {c}" for i, c in enumerate(nice_to_have)
-        )
+        numbered = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(nice_to_have))
         sections.append(
             "# Nice-to-Have Criteria\n\n"
             "Evaluate each. These don't block acceptance but should be noted.\n\n"

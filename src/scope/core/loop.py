@@ -138,7 +138,7 @@ def sugar_to_rubric(checker: str) -> str:
     checker_type = detect_checker_type(checker)
 
     if checker_type == "agent":
-        prompt = checker[len("agent:"):].strip()
+        prompt = checker[len("agent:") :].strip()
         return f"## Criteria\n- {prompt}\n"
     elif checker_type == "command":
         return f"## Gates\n- `{checker}`\n"
@@ -376,7 +376,11 @@ def run_agent_checker(
         history=history if history else None,
     )
 
-    checker_id_str = iter_session_id(parent_session_id, iteration, "check") if parent_session_id else ""
+    checker_id_str = (
+        iter_session_id(parent_session_id, iteration, "check")
+        if parent_session_id
+        else ""
+    )
     checker_id = spawn_session(
         prompt=contract,
         model=checker_model,
@@ -422,11 +426,13 @@ def run_gates(gates: list[str]) -> list[dict]:
         verdict, output = run_command_checker(command=command)
         # Normalize: run_command_checker returns "accept"/"retry"/"terminate"
         gate_verdict = "pass" if verdict == "accept" else "fail"
-        results.append({
-            "command": command,
-            "verdict": gate_verdict,
-            "output": output,
-        })
+        results.append(
+            {
+                "command": command,
+                "verdict": gate_verdict,
+                "output": output,
+            }
+        )
     return results
 
 
@@ -469,7 +475,11 @@ def run_rubric_checker(
             notes=rubric.notes,
         )
 
-        checker_id_str = iter_session_id(parent_session_id, iteration, "check") if parent_session_id else ""
+        checker_id_str = (
+            iter_session_id(parent_session_id, iteration, "check")
+            if parent_session_id
+            else ""
+        )
         checker_session_id = spawn_session(
             prompt=contract,
             model=checker_model,
@@ -511,7 +521,13 @@ def run_rubric_checker(
         agent_verdict, agent_feedback = parse_verdict(response)
 
         if agent_verdict == "terminate":
-            return ("terminate", agent_feedback, checker_session_id, gate_results, criteria_summary)
+            return (
+                "terminate",
+                agent_feedback,
+                checker_session_id,
+                gate_results,
+                criteria_summary,
+            )
 
         if not gates_pass:
             # Build feedback from failed gates + agent feedback
@@ -520,12 +536,30 @@ def run_rubric_checker(
                 f"- `{g['command']}`: {g['output'][:500]}" for g in failed_gates
             )
             combined = f"{gate_feedback}\n\nAgent feedback:\n{agent_feedback}"
-            return ("retry", combined, checker_session_id, gate_results, criteria_summary)
+            return (
+                "retry",
+                combined,
+                checker_session_id,
+                gate_results,
+                criteria_summary,
+            )
 
         if agent_verdict == "accept":
-            return ("accept", agent_feedback, checker_session_id, gate_results, criteria_summary)
+            return (
+                "accept",
+                agent_feedback,
+                checker_session_id,
+                gate_results,
+                criteria_summary,
+            )
         else:
-            return ("retry", agent_feedback, checker_session_id, gate_results, criteria_summary)
+            return (
+                "retry",
+                agent_feedback,
+                checker_session_id,
+                gate_results,
+                criteria_summary,
+            )
 
     else:
         # Gates-only rubric: no agent checker needed
@@ -535,9 +569,7 @@ def run_rubric_checker(
 
         gates_pass = all(g["verdict"] == "pass" for g in gate_results)
         if gates_pass:
-            gate_summary = "\n".join(
-                f"- `{g['command']}`: PASS" for g in gate_results
-            )
+            gate_summary = "\n".join(f"- `{g['command']}`: PASS" for g in gate_results)
             return ("accept", gate_summary, "", gate_results, "")
         else:
             failed_gates = [g for g in gate_results if g["verdict"] != "pass"]
@@ -547,9 +579,7 @@ def run_rubric_checker(
             return ("retry", gate_feedback, "", gate_results, "")
 
 
-def _parse_criteria_summary(
-    response: str, num_criteria: int, num_nice: int
-) -> str:
+def _parse_criteria_summary(response: str, num_criteria: int, num_nice: int) -> str:
     """Parse per-criterion PASS/FAIL counts from agent response.
 
     Best-effort parsing. Falls back to empty string if parsing fails.
@@ -737,15 +767,17 @@ def run_loop(
             _rubric, _content, iter_rubric_hash = load_rubric(rubric_path)
 
         # Run checker with summarized result
-        verdict, feedback, checker_session_id, gate_results, criteria_summary = run_checker(
-            checker=checker,
-            doer_result=doer_summary,
-            iteration=iteration,
-            history=history,
-            checker_model=checker_model,
-            dangerously_skip_permissions=dangerously_skip_permissions,
-            parent_session_id=session_id,
-            rubric_path=rubric_path,
+        verdict, feedback, checker_session_id, gate_results, criteria_summary = (
+            run_checker(
+                checker=checker,
+                doer_result=doer_summary,
+                iteration=iteration,
+                history=history,
+                checker_model=checker_model,
+                dangerously_skip_permissions=dangerously_skip_permissions,
+                parent_session_id=session_id,
+                rubric_path=rubric_path,
+            )
         )
 
         # Record history

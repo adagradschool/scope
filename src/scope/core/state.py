@@ -248,7 +248,11 @@ def parent_of(session_id: str) -> str:
     """
     if "-" in session_id.split(".")[-1]:
         # "2.1-0-check" → "2.1"
-        return session_id.rsplit("-", 2)[0] if session_id.count("-") >= 2 else session_id.split("-")[0]
+        return (
+            session_id.rsplit("-", 2)[0]
+            if session_id.count("-") >= 2
+            else session_id.split("-")[0]
+        )
     if "." in session_id:
         return session_id.rsplit(".", 1)[0]
     return ""
