@@ -237,6 +237,23 @@ def delete_session(session_id: str) -> None:
     shutil.rmtree(session_dir)
 
 
+def parent_of(session_id: str) -> str:
+    """Walk up the ID tree to find the parent session ID.
+
+    Handles both dot-children (``2.1``) and iteration-indexed dash-children
+    (``2.1-0-check``).
+
+    Returns:
+        Parent session ID, or ``""`` for root sessions.
+    """
+    if "-" in session_id.split(".")[-1]:
+        # "2.1-0-check" → "2.1"
+        return session_id.rsplit("-", 2)[0] if session_id.count("-") >= 2 else session_id.split("-")[0]
+    if "." in session_id:
+        return session_id.rsplit(".", 1)[0]
+    return ""
+
+
 def get_descendants(session_id: str) -> list[Session]:
     """Get all descendant sessions (children, grandchildren, etc.).
 
@@ -249,9 +266,10 @@ def get_descendants(session_id: str) -> list[Session]:
     all_sessions = load_all()
     descendants = []
 
-    prefix = f"{session_id}."
+    dot_prefix = f"{session_id}."
+    dash_prefix = f"{session_id}-"
     for session in all_sessions:
-        if session.id.startswith(prefix):
+        if session.id.startswith(dot_prefix) or session.id.startswith(dash_prefix):
             descendants.append(session)
 
     # Sort by depth (deepest first) for safe deletion order
@@ -489,6 +507,7 @@ def save_loop_state(
     max_iterations: int,
     current_iteration: int,
     history: list[dict],
+    rubric_path: str = "",
 ) -> None:
     """Save loop state for a session.
 
@@ -499,7 +518,9 @@ def save_loop_state(
         checker: The checker specification (command or "agent:..." prompt).
         max_iterations: Maximum loop iterations.
         current_iteration: Current iteration number.
-        history: List of iteration records with keys: iteration, doer_session, verdict, feedback.
+        history: List of iteration records with keys: iteration, doer_session,
+            verdict, feedback. May also include gates, criteria_summary, rubric_hash.
+        rubric_path: Absolute path to the rubric file (empty for legacy mode).
 
     Raises:
         FileNotFoundError: If session doesn't exist.
@@ -520,6 +541,8 @@ def save_loop_state(
         "current_iteration": current_iteration,
         "history": history,
     }
+    if rubric_path:
+        state["rubric_path"] = rubric_path
 
     target = session_dir / "loop_state.json"
     fd, tmp_path = tempfile.mkstemp(dir=session_dir, suffix=".tmp")

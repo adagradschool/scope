@@ -19,6 +19,7 @@ from scope.core.state import (
     load_claude_session_id,
     load_session,
     next_id,
+    parent_of,
     save_session,
 )
 from scope.core.tmux import (
@@ -116,6 +117,7 @@ class ScopeApp(App):
     BINDINGS = [
         ("n", "new_session", "New"),
         ("x", "abort_session", "Abort"),
+        ("r", "edit_rubric", "Rubric"),
         ("j", "cursor_down", "Down"),
         ("k", "cursor_up", "Up"),
         ("space", "toggle_collapse", "Expand"),
@@ -512,6 +514,57 @@ class ScopeApp(App):
         """Toggle hiding of done/aborted sessions."""
         self._hide_done = not self._hide_done
         self.refresh_sessions()
+
+    def action_edit_rubric(self) -> None:
+        """Open the rubric file for the selected loop session in $EDITOR."""
+        import subprocess as sp
+
+        from scope.core.state import load_loop_state
+
+        table = self.query_one(SessionTable)
+        if table.cursor_row is None:
+            self.notify("No session selected", severity="warning")
+            return
+
+        row_key = table.get_row_at(table.cursor_row)
+        if not row_key:
+            return
+
+        # Extract session ID
+        display_id = row_key[0]
+        session_id = display_id.lstrip("▶▼ ").strip()
+
+        # Walk up to find the loop root (in case a child iteration is selected)
+        while True:
+            loop_state = load_loop_state(session_id)
+            if loop_state and loop_state.get("rubric_path"):
+                break
+            p = parent_of(session_id)
+            if not p:
+                break
+            session_id = p
+
+        if not loop_state:
+            self.notify("No loop state for this session", severity="warning")
+            return
+
+        rubric_path = loop_state.get("rubric_path", "")
+        if not rubric_path:
+            self.notify("No rubric file for this session", severity="warning")
+            return
+
+        if not Path(rubric_path).exists():
+            self.notify(f"Rubric file not found: {rubric_path}", severity="error")
+            return
+
+        editor = os.environ.get("EDITOR", "vi")
+        try:
+            # Suspend the TUI and open editor
+            with self.suspend():
+                sp.run([editor, rubric_path])
+            self.notify(f"Rubric saved: {rubric_path}")
+        except Exception as e:
+            self.notify(f"Failed to open editor: {e}", severity="error")
 
     def action_quit(self) -> None:
         """Show confirmation dialog before quitting."""
