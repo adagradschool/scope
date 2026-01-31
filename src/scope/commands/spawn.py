@@ -15,8 +15,10 @@ import click
 from scope.core.contract import generate_contract
 from scope.core.loop import (
     PENDING_TASK,
+    detect_checker_type,
     run_loop,
     send_contract,
+    sugar_to_rubric,
 )
 from scope.core.session import Session
 from scope.core.state import (
@@ -85,10 +87,11 @@ def _wait_for_task_update(task_path: Path, timeout: float) -> bool:
     "--checker",
     "checker",
     required=True,
-    help="REQUIRED. Command or agent prompt to verify doer output. "
-    'Prefix with "agent:" for an agent checker (runs as a tmux session). '
-    'Shell command: exit 0 = pass. Example: --checker "pytest tests/" or '
-    '--checker "agent: Review for edge cases. Verdict: ACCEPT/RETRY/TERMINATE"',
+    help="REQUIRED. Rubric file, command, or agent prompt for verification. "
+    "Rubric file: --checker rubric.md (primary path). "
+    'Shell command sugar: --checker "pytest tests/" (becomes gates-only rubric). '
+    'Agent prompt sugar: --checker "agent: Review for correctness" (becomes criteria-only rubric). '
+    "Rubric is always materialized to the session directory for mid-loop editing.",
 )
 @click.option(
     "--max-iterations",
@@ -104,6 +107,7 @@ def _wait_for_task_update(task_path: Path, timeout: float) -> bool:
     default="",
     help="Model for agent checker (default: same as doer).",
 )
+@click.option("--session-id", "explicit_session_id", default="", hidden=True)
 @click.pass_context
 def spawn(
     ctx: click.Context,
@@ -115,6 +119,7 @@ def spawn(
     checker: str,
     max_iterations: int,
     checker_model: str,
+    explicit_session_id: str,
 ) -> None:
     """Spawn a new scope session.
 
@@ -156,7 +161,7 @@ def spawn(
     parent = os.environ.get("SCOPE_SESSION_ID", "")
 
     # Get next available ID
-    session_id = next_id(parent)
+    session_id = explicit_session_id if explicit_session_id else next_id(parent)
 
     # Create session object - task will be inferred by hooks
     window_name = tmux_window_name(session_id)
@@ -232,6 +237,31 @@ def spawn(
         )
         (session_dir / "contract.md").write_text(contract)
 
+        # Materialize rubric to session directory
+        rubric_path = ""
+        checker_type = detect_checker_type(checker)
+        rubric_file = session_dir / "rubric.md"
+
+        if checker_type == "file":
+            # Copy rubric file to session directory
+            source = Path(checker)
+            if not source.is_absolute():
+                source = Path.cwd() / source
+            if source.exists():
+                rubric_file.write_text(source.read_text())
+            else:
+                click.echo(
+                    f"Warning: rubric file not found: {checker}",
+                    err=True,
+                )
+                rubric_file.write_text(f"## Notes\nRubric file not found: {checker}\n")
+            rubric_path = str(rubric_file)
+        else:
+            # Sugar (command or agent:) → convert to rubric
+            rubric_content = sugar_to_rubric(checker)
+            rubric_file.write_text(rubric_content)
+            rubric_path = str(rubric_file)
+
         # Initialize loop state
         save_loop_state(
             session_id=session_id,
@@ -239,6 +269,7 @@ def spawn(
             max_iterations=max_iterations,
             current_iteration=0,
             history=[],
+            rubric_path=rubric_path,
         )
 
         # Wait for Claude Code to signal readiness via SessionStart hook
@@ -352,6 +383,7 @@ def spawn(
             max_iterations=max_iterations,
             checker_model=checker_model or model,
             dangerously_skip_permissions=dangerously_skip_permissions,
+            rubric_path=rubric_path,
         )
 
         # Spawn evolution subagent (opt-in via env var)

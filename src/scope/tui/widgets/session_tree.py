@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from textual.widgets import DataTable
 
 from scope.core.session import Session
-from scope.core.state import ensure_scope_dir, load_loop_state
+from scope.core.state import ensure_scope_dir, load_loop_state, parent_of
 
 
 @dataclass
@@ -21,6 +21,7 @@ class TreeNode:
         iteration_label: Display label like "Iter 0", "Iter 1", etc.
         loop_info: Summary like "iter 2/3" for loop headers.
         mode: "do", "check", or "" for the Mode column.
+        check_summary: Per-criterion summary like "2/3 must  1/2 nice  gates:1/2".
     """
 
     session: Session
@@ -30,6 +31,49 @@ class TreeNode:
     iteration_label: str = ""
     loop_info: str = ""
     mode: str = ""
+    check_summary: str = ""
+
+
+def _check_summary_from_history(entry: dict) -> str:
+    """Build a check summary string from a history entry.
+
+    Returns a string like "2/3 must  1/2 nice  gates:1/2" or "".
+    """
+    parts = []
+
+    # Gate results
+    gates = entry.get("gates", [])
+    if gates:
+        passed = sum(1 for g in gates if g.get("verdict") == "pass")
+        parts.append(f"gates:{passed}/{len(gates)}")
+
+    # Criteria summary (already formatted by the agent checker parser)
+    criteria = entry.get("criteria_summary", "")
+    if criteria:
+        parts.append(criteria)
+
+    return "  ".join(parts)
+
+
+def _session_sort_key(sid: str) -> tuple:
+    """Sort key for session IDs that handles both dot and dash segments.
+
+    Returns a 5-tuple where the last two elements distinguish iteration
+    children from plain IDs.  Plain IDs use ``(-1, "")`` so they sort
+    before any iteration child of the same base.
+
+    ``"2.1"``          → ``(2, 1, -1, "")``
+    ``"2.1-0-check"``  → ``(2, 1,  0, "check")``
+    ``"2.1-1-do"``     → ``(2, 1,  1, "do")``
+    """
+    parts = sid.split(".")
+    last = parts[-1]
+    if "-" in last:
+        segs = last.split("-")
+        # segs e.g. ["1", "0", "check"]
+        base = [int(p) for p in parts[:-1]] + [int(segs[0])]
+        return tuple(base + [int(segs[1]), segs[2]])
+    return tuple([int(p) for p in parts] + [-1, ""])
 
 
 def _build_tree(
@@ -69,7 +113,7 @@ def _build_tree(
 
     # Sort children by ID within each parent group (numeric segment ordering)
     for parent_id in children:
-        children[parent_id].sort(key=lambda s: [int(x) for x in s.id.split(".")])
+        children[parent_id].sort(key=lambda s: _session_sort_key(s.id))
 
     # Build lookup by id
     session_by_id: dict[str, Session] = {s.id: s for s in sessions}
@@ -167,12 +211,24 @@ def _build_tree(
                         )
                     )
 
+                    # Build history entry lookup by iteration
+                    history_by_iter: dict[int, dict] = {}
+                    for entry in sorted_history:
+                        history_by_iter[entry.get("iteration", 0)] = entry
+
                     # Iteration 0 checker (if recorded in history)
                     iter0_checker_id = checker_by_iter.get(0)
                     iter0_checker = (
                         session_by_id.get(iter0_checker_id)
                         if iter0_checker_id
                         else None
+                    )
+                    # For command-only checkers, show check row even without a checker session
+                    iter0_history = history_by_iter.get(0)
+                    iter0_summary = (
+                        _check_summary_from_history(iter0_history)
+                        if iter0_history
+                        else ""
                     )
                     if iter0_checker:
                         result.append(
@@ -183,6 +239,20 @@ def _build_tree(
                                 node_type="iteration",
                                 iteration_label="check",
                                 mode="check",
+                                check_summary=iter0_summary,
+                            )
+                        )
+                    elif iter0_history and not iter0_checker_id:
+                        # Gates-only checker: no checker session, show summary on parent
+                        result.append(
+                            TreeNode(
+                                session=session,
+                                depth=depth + 1,
+                                has_children=False,
+                                node_type="iteration",
+                                iteration_label="check",
+                                mode="check",
+                                check_summary=iter0_summary,
                             )
                         )
 
@@ -207,6 +277,12 @@ def _build_tree(
                         # Checker for this iteration
                         cs_id = checker_by_iter.get(iteration_num)
                         checker_session = session_by_id.get(cs_id) if cs_id else None
+                        iter_history = history_by_iter.get(iteration_num)
+                        iter_summary = (
+                            _check_summary_from_history(iter_history)
+                            if iter_history
+                            else ""
+                        )
                         if checker_session:
                             result.append(
                                 TreeNode(
@@ -216,6 +292,20 @@ def _build_tree(
                                     node_type="iteration",
                                     iteration_label="check",
                                     mode="check",
+                                    check_summary=iter_summary,
+                                )
+                            )
+                        elif iter_history and not cs_id:
+                            # Gates-only checker: no checker session
+                            result.append(
+                                TreeNode(
+                                    session=session,
+                                    depth=depth + 1,
+                                    has_children=False,
+                                    node_type="iteration",
+                                    iteration_label="check",
+                                    mode="check",
+                                    check_summary=iter_summary,
                                 )
                             )
 
@@ -354,7 +444,11 @@ class SessionTable(DataTable):
                 task = node.iteration_label
                 if len(task) > 40:
                     task = task[:37] + "..."
-                activity = self._get_activity(session.id, session.state)
+                # Show check_summary in activity column for checker rows
+                if node.check_summary:
+                    activity = node.check_summary
+                else:
+                    activity = self._get_activity(session.id, session.state)
                 indent = "  " * node.depth
                 display_id = f"{indent}  {session.id}"
                 row_key = session.id
@@ -395,8 +489,9 @@ class SessionTable(DataTable):
                     except Exception:
                         pass
                 # Walk up to parent
-                if "." in session_id:
-                    session_id = session_id.rsplit(".", 1)[0]
+                parent = parent_of(session_id)
+                if parent:
+                    session_id = parent
                 else:
                     self._selected_session_id = None
                     break
